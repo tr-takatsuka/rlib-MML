@@ -1,0 +1,66 @@
+// sample 
+//
+
+createPort(name:PianoA,channel:1)
+createPort(name:PianoB,channel:1)
+createPort(name:PianoC,channel:2)
+
+
+port(PianoA)	l8  o3 t100 @1
+port(PianoB)	l8  o3
+port(PianoC)	l8  o2 @1
+port(PianoA)	rg<cd
+port(PianoB)	r^^^
+port(PianoC)	r^^^
+
+port(PianoA)	e^^^			^cde		fede				^^b^
+port(PianoB)	rrrr			rrrr		a^^r				^^^^
+port(PianoC)	cg<de			^^^^		>ea<ea				^^^^
+
+port(PianoA)	a^^e			^^b^		a^^e				^ede
+port(PianoB)	<e^^>a			^^r^		<e^^c				^c>b<c
+port(PianoC)	>>a<eb<c		^^^^		>>g<eb<c			^^^^
+
+port(PianoA)	c^^^			>a.b.<c		c^^^				>b^^^
+port(PianoB)	>a^^^			r^^^		a^^^				g^^^
+port(PianoC)	>>f+<ef+a		^^^^		>g^^^				g^^^
+
+port(PianoA)	<c^^^			t80d^^^		^^^r				t100r^^^
+port(PianoB)	a^^^			b^^^		^^^r				r^^^
+port(PianoC)	g^^^			g^^^		^^^r				<cg<de
+
+port(PianoA)	d32e8-32dc^		f^ed 		^c^e				^^^^
+port(PianoB)	g^^^			g+^^^		r^^^				r^^^
+port(PianoC)	^^^^			>cg+<cf		^^^^				>cg<de
+
+port(PianoA)	d32e8-32dc^		d^cc		^>g+^g24g+24g8-12	^^^^
+port(PianoB)	g^^^			g+^^a+		^f^e				^^^^
+port(PianoC)	^^^^			>cg+<cf		^^^^				>cg<de
+
+port(PianoA)	<gaab-			b-^ea		^g^a				^^^^
+port(PianoB)	<e^^^			e^^e		^^^e				^^^^
+port(PianoC)	^^^^			>c+a<ea		^^^^				>da<de
+
+port(PianoA)	defg			g^b<d		^>f^e				^^^^
+port(PianoB)	r^^^			^^^^		^d^c				^^^^
+port(PianoC)	^^^^			>>g<dgb		^^^^				cg<ce
+
+port(PianoA)	e^^^			e^^^		e>a<d-e				e^^d	
+port(PianoB)	d^^^			d^^^		c+^^^				>a^^a	
+port(PianoC)	>>b-<fb-<d		>>a<egb		<c+^^^				>da<cd	
+
+port(PianoA)	^^>a^			<edcd		^ef^				e^^d
+port(PianoB)	^^^^			a^^a		^^^^				<c^^>a+
+port(PianoC)	^^^^			>da<cd		^^^^				>>a+<fa+<d
+
+port(PianoA)	^^^^			edcd		^efg				^^^^
+port(PianoB)	^^^^			<c^^>a+		^^^<d				^^^^
+port(PianoC)	^^^^			>>a+<fa+<d	^^^^				>>g<dfg
+
+port(PianoA)	^^^g			^^^^		t90<c>bab			t92<c^^^
+port(PianoB)	^^^d			^^^^		^^^^				g^^^
+port(PianoC)	^<dfg			^^^^		^^^^				>cfg<c
+
+port(PianoA)	^^^t85^			r16c8-16^^^	^^^^
+port(PianoB)	^^^^			r32g8-32^^^	^^^^
+port(PianoC)	dfga			<c^^^		^^^^
