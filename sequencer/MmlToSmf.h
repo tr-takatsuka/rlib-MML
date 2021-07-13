@@ -5,7 +5,7 @@
 
 namespace rlib::sequencer {
 
-	Smf mmlToSmf(const std::string& mml) {
+	inline Smf mmlToSmf(const std::string& mml) {
 
 		const auto result = MmlCompiler::compile(mml);
 
@@ -23,6 +23,14 @@ namespace rlib::sequencer {
 					{typeid(MmlCompiler::EventProgramChange), [](Smf::Track& track,const MmlCompiler::Port& port,const MmlCompiler::Event& event) {
 						auto& e = static_cast<const MmlCompiler::EventProgramChange&>(event);
 						track.events.insert(std::make_shared<Smf::EventProgramChange>(e.position, port.channel, e.programNo));
+					}},
+					{typeid(MmlCompiler::EventVolume), [](Smf::Track& track,const MmlCompiler::Port& port,const MmlCompiler::Event& event) {
+						auto& e = static_cast<const MmlCompiler::EventVolume&>(event);
+						track.events.insert(std::make_shared<Smf::EventControlChange>(e.position, port.channel, Smf::EventControlChange::Type::volume, e.volume));
+					}},
+					{typeid(MmlCompiler::EventPan), [](Smf::Track& track,const MmlCompiler::Port& port,const MmlCompiler::Event& event) {
+						auto& e = static_cast<const MmlCompiler::EventPan&>(event);
+						track.events.insert(std::make_shared<Smf::EventControlChange>(e.position, port.channel, Smf::EventControlChange::Type::pan, e.pan));
 					}},
 					{typeid(MmlCompiler::EventTempo), [](Smf::Track& track,const MmlCompiler::Port& port,const MmlCompiler::Event& event) {
 						auto& e = static_cast<const MmlCompiler::EventTempo&>(event);

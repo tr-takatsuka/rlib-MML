@@ -134,8 +134,15 @@ std::vector<uint8_t> Smf::getFileImage() const
 				{typeid(Smf::EventProgramChange), [](const Smf::Event& event) {		// EventProgramChange
 					auto& e = static_cast<const Smf::EventProgramChange&>(event);
 					return std::vector<uint8_t>{
-						static_cast<uint8_t>(0xc0 | (e.channel & 0xf)),
-						static_cast<uint8_t>(e.programNo & 0x7f),
+						static_cast<uint8_t>(0xc0 | (e.channel & 0xf)),	static_cast<uint8_t>(e.programNo & 0x7f),
+					};
+				}},
+				{typeid(Smf::EventControlChange), [](const Smf::Event& event) {		// EventControlChange
+					auto& e = static_cast<const Smf::EventControlChange&>(event);
+					return std::vector<uint8_t>{
+						static_cast<uint8_t>(0xb0 | (e.channel & 0xf)),
+							static_cast<uint8_t>(static_cast<uint8_t>(e.type) & 0x7f),
+							static_cast<uint8_t>(e.value & 0x7f),
 					};
 				}},
 				{typeid(Smf::EventMeta), [](const Smf::Event& event) {				// EventMeta
@@ -195,7 +202,7 @@ std::vector<uint8_t> Smf::getFileImage() const
 		trackData.emplace_back(std::move(v));
 	}
 
-	const Inner::HeaderChunk headerChunk = [&]{
+	const Inner::HeaderChunk headerChunk = [&] {
 		Inner::HeaderChunk h;
 		h.trackCount = static_cast<uint16_t>(trackData.size());
 		h.format = h.trackCount > 1 ? 1 : 0;

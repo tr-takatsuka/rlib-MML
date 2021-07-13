@@ -30,7 +30,7 @@ int main(const int argc, const char* const argv[])
 		po::notify(vm);
 
 		if (vm.count("version")) {
-			std::cout << "mmlcompiler version 1.0.0" << std::endl;
+			std::cout << "rlib-MML version 1.0.1" << std::endl;
 			return 0;
 		}
 
@@ -65,7 +65,7 @@ int main(const int argc, const char* const argv[])
 			const size_t lineNumber = [&] {	// 行番号取得
 				static const std::regex re(R"(\r\n|\n|\r)");
 				size_t lf = 0;
-				for (auto i = std::sregex_token_iterator(mml.cbegin(), mml.cbegin() + e.position, re, -1); i != std::sregex_token_iterator(); i++) lf++;
+				for (auto i = std::sregex_token_iterator(mml.cbegin(), e.it, re, -1); i != std::sregex_token_iterator(); i++) lf++;
 				return lf;
 			}();
 			const auto msg = sequencer::MmlCompiler::Exception::getMessage(e.code);	// エラーメッセージ取得

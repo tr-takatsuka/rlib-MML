@@ -19,6 +19,12 @@ namespace rlib::sequencer {
 		struct EventProgramChange : public Event {
 			uint8_t	programNo = 0;
 		};
+		struct EventVolume : public Event {
+			uint8_t	volume = 0;			// 音量値 0～127
+		};
+		struct EventPan : public Event {
+			uint8_t	pan = 0;			// パン値 0～127
+		};
 
 		struct EventNote : public Event {
 			uint8_t	note = 0;			// ノート番号 0～127
@@ -69,14 +75,17 @@ namespace rlib::sequencer {
 				createPortPortNameError,	// createPort コマンドのポート名指定に誤りがあります
 				createPortDuplicateError,	// createPort コマンドでポート名が重複しています
 				createPortChannelError,		// createPort コマンドのチャンネル指定に誤りがあります
+				portNameError,				// port コマンドのポート名指定に誤りがあります
+				volumeError,				// volume コマンドの指定に誤りがあります
+				panError	,				// pan コマンドの指定に誤りがあります
 				unknownError,				// 解析出来ない書式です
 				stdEexceptionError,			// std::excption エラーです
 			};
-			const Code			code;
-			const size_t		position;
-			const std::string	errorWord;	// MML内のエラーとなった箇所の文字列
-			const std::string	annotate;
-			Exception(Code code_, const std::string& mml, const std::string::const_iterator& it, const std::string& annotate_ = "");
+			const Code							code;
+			const std::string::const_iterator	it;
+			const std::string					errorWord;	// MML内のエラーとなった箇所の文字列
+			const std::string					annotate;
+			Exception(Code code_,const std::string::const_iterator& itBegin, const std::string::const_iterator& itEnd, const std::string& annotate_ = "");
 
 			static std::string getMessage(Code code);
 
