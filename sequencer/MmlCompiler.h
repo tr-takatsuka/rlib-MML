@@ -62,6 +62,8 @@ namespace rlib::sequencer {
 				argumentError,				// 関数の引数指定に誤りがあります
 				functionCallError,			// 関数呼び出しに誤りがあります
 				unknownNumberError,			// 数値の指定に誤りがあります
+				vCommandError,				// ベロシティ指定（v コマンド）に誤りがあります
+				vCommandRangeError,			// ベロシティ指定（v コマンド）の値が範囲外です
 				lCommandError,				// デフォルト音長指定（l コマンド）に誤りがあります
 				oCommandError,				// オクターブ指定（o コマンド）に誤りがあります
 				oCommandRangeError,			// オクターブ指定（o コマンド）の値が範囲外です
@@ -77,7 +79,9 @@ namespace rlib::sequencer {
 				createPortChannelError,		// createPort コマンドのチャンネル指定に誤りがあります
 				portNameError,				// port コマンドのポート名指定に誤りがあります
 				volumeError,				// volume コマンドの指定に誤りがあります
+				volumeRangeError,			// volume コマンドの値が範囲外です
 				panError	,				// pan コマンドの指定に誤りがあります
+				panRangeError,				// pan コマンドの値が範囲外です
 				unknownError,				// 解析出来ない書式です
 				stdEexceptionError,			// std::excption エラーです
 			};

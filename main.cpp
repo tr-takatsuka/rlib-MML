@@ -27,7 +27,6 @@ int main(const int argc, const char* const argv[])
 
 		po::variables_map vm;
 		po::store(po::command_line_parser(argc, argv).options(desc).positional(pd).run(), vm);
-		po::notify(vm);
 
 		if (vm.count("version")) {
 			std::cout << "rlib-MML version 1.0.1" << std::endl;
@@ -38,6 +37,8 @@ int main(const int argc, const char* const argv[])
 			std::cout << desc << std::endl;		// ヘルプ表示
 			return 0;
 		}
+
+		po::notify(vm);
 
 		const std::string mml = [&] {
 			auto path = std::filesystem::u8path(input);

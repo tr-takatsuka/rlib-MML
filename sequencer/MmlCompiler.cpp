@@ -21,6 +21,8 @@ std::string MmlCompiler::Exception::getMessage(Code code) {
 		{Code::argumentError,					u8R"(関数の引数指定に誤りがあります)"},
 		{Code::functionCallError,				u8R"(関数呼び出しに誤りがあります)"},
 		{Code::unknownNumberError,				u8R"(数値の指定に誤りがあります)"},
+		{Code::vCommandError,					u8R"(ベロシティ指定（v コマンド）に誤りがあります)"},
+		{Code::vCommandRangeError,				u8R"(ベロシティ指定（v コマンド）の値が範囲外です)"},
 		{Code::lCommandError,					u8R"(デフォルト音長指定（l コマンド）に誤りがあります)"},
 		{Code::oCommandError,					u8R"(オクターブ指定（o コマンド）に誤りがあります)"},
 		{Code::oCommandRangeError,				u8R"(オクターブ指定（o コマンド）の値が範囲外です)"},
@@ -36,7 +38,9 @@ std::string MmlCompiler::Exception::getMessage(Code code) {
 		{Code::createPortChannelError,			u8R"(createPort コマンドのチャンネル指定に誤りがあります)" },
 		{Code::portNameError,					u8R"(port コマンドのポート名指定に誤りがあります)" },
 		{Code::volumeError,						u8R"(volume コマンドの指定に誤りがあります)" },
+		{Code::volumeRangeError,				u8R"(volume コマンドの値が範囲外です)" },
 		{Code::panError,						u8R"(pan コマンドの指定に誤りがあります)" },
+		{Code::panRangeError,					u8R"(pan コマンドの値が範囲外です)" },
 		{Code::unknownError,					u8R"(解析出来ない書式です)"},
 		{Code::stdEexceptionError,				u8R"(std::excption エラーです)"},
 	};
@@ -154,48 +158,74 @@ public:
 		return std::nullopt;
 	};
 
-	// 符号なし数値解析
-	static optional<pair<std::string::const_iterator, unsigned long long>> parseUInt(const std::string::const_iterator& begin, const std::string::const_iterator& end) {
-		if (auto r = regexSearch(begin, end, boost::regex(R"(^\s*([0-9]+))"))) {
-			const auto t = std::make_pair(
-				(*r)[0].second,
-				boost::lexical_cast<unsigned long long>((*r)[1]));
-			return t;
+	// 数値解析
+	static auto parseInt(const std::string::const_iterator& iBegin, const std::string::const_iterator& iEnd,bool sign) {
+		struct Result {
+			std::string::const_iterator		next;		// 次の位置
+			optional<bool>					sign;		// true:+ false:-
+			long long						value = 0;
+		};
+		optional<Result> result = Result();
+
+		auto const &re = [&]{
+			if(sign){
+				static const boost::regex re(R"(^\s*(?<value>(?<sign>[\+\-]?)[0-9]+))");
+				return re;
+			}
+			static const boost::regex re(R"(^\s*(?<value>[0-9]+))");
+			return re;
+		}();
+		if (auto r = regexSearch(iBegin, iEnd, re)) {
+			result->next = (*r)[0].second;
+			result->value = boost::lexical_cast<long long>((*r)["value"]);
+			if( auto sign = (*r)["sign"].str(); !sign.empty() ){
+				result->sign = sign == "+" ? true : false;
+			}
+			return result;
 		}
-		return std::nullopt;
+		return decltype(result)();
 	}
 
 	// 関数解析
-	struct ParsedFunction {
-		using PairIterator = pair<std::string::const_iterator, std::string::const_iterator>;
-		PairIterator						functionName;	// 関数名
-		std::string::const_iterator			next;			// 次の位置
-		std::map<std::string, PairIterator>	args;			// 引数リスト
+	static auto parseFunction(const std::string::const_iterator& iBegin, const std::string::const_iterator& iEnd, const std::string& functionName) {
+		struct Result {
+			using PairIterator = pair<std::string::const_iterator, std::string::const_iterator>;
+			PairIterator						functionName;	// 関数名
+			std::string::const_iterator			next;			// 次の位置
+			std::map<std::string, PairIterator>	args;			// 引数リスト
 
-		optional<std::string> findArgString(const std::string name)const {
-			if (auto i = args.find(name); i != args.end()) return std::string(i->second.first, i->second.second);
-			return std::nullopt;
-		}
+			optional<std::string> findArgString(const std::string name)const {
+				if (auto i = args.find(name); i != args.end()) return std::string(i->second.first, i->second.second);
+				return std::nullopt;
+			}
 
-		optional<unsigned long long> findArgUInt(const std::string name)const {
-			const auto i = args.find(name);
-			if (i == args.end()) return std::nullopt;
-			const auto r = parseUInt(i->second.first, i->second.second);
-			if (!r) return std::nullopt;
-			if (r->first != i->second.second) return std::nullopt;
-			return r->second;
-		}
+			auto findArgInt(const std::string name, bool sign)const {
+				struct Result {
+					optional<bool>	sign;		// true:+ false:-
+					long long		value = 0;
+				};
+				optional<Result> result = Result();
 
-	};
-	static const optional<ParsedFunction> parseFunction(const std::string::const_iterator& iBegin, const std::string::const_iterator& iEnd, const std::string& functionName) {
-		ParsedFunction result;
+				if (const auto i = args.find(name); i != args.end()) {
+					if (const auto r = parseInt(i->second.first, i->second.second, sign)) {
+						if (r->next == i->second.second){		// 数値以外がある?
+							result->sign = r->sign;
+							result->value = r->value;
+							return result;
+						}
+					}
+				}
+				return decltype(result)();
+			}
+		};
+		optional<Result> result = Result();
 
 		std::string::const_iterator it;
 		if (auto r = regexSearch(iBegin, iEnd, boost::regex(string::format(R"(^\s*(?<name>%1%)\W)", functionName)))) {
-			result.functionName = (*r)["name"];		// ヒットした関数名
+			result->functionName = (*r)["name"];		// ヒットした関数名
 			it = (*r)["name"].second;
 		} else {
-			return std::nullopt;		// 該当しなかった
+			return decltype(result)();		// 該当しなかった
 		}
 
 		while (auto r = Inner::parseCommant(it, iEnd)) it = *r;	// コメントを読み飛ばす
@@ -203,10 +233,10 @@ public:
 		if (auto r = regexSearch(it, iEnd, boost::regex(R"(^\s*\()"))) {		// "(" 検索
 			it = (*r)[0].second;
 		} else {
-			return std::nullopt;		// 該当しなかった
+			return decltype(result)();		// 該当しなかった
 		}
 
-		std::vector<decltype(result.args)::value_type::second_type> nonameArgs;
+		std::vector<decltype(result->args)::value_type::second_type> nonameArgs;
 
 		std::string currentArgName;
 		union {									// 次トークン情報
@@ -233,10 +263,9 @@ public:
 				static const boost::regex re(R"(^\s*\))");
 				if (auto r = regexSearch(it, iEnd, re)) {
 					for (size_t i = 0; i < nonameArgs.size(); i++) {
-						result.args[boost::lexical_cast<std::string>(i)] = nonameArgs[i];
+						result->args[boost::lexical_cast<std::string>(i)] = nonameArgs[i];
 					}
-
-					result.next = (*r)[0].second;		// 次の位置
+					result->next = (*r)[0].second;		// 次の位置
 					return result;
 				}
 			}
@@ -282,14 +311,14 @@ public:
 					const auto key = (*r)["key"].str();
 					const auto re = string::format(R"(^(?<value>(?!\)%1%")[\s\S]*)\)%1%")", key);
 					if (auto r2 = regexSearch((*r)[0].second, iEnd, boost::regex(re))) {			// 値取得
-						result.args[currentArgName] = (*r2)["value"];
+						result->args[currentArgName] = (*r2)["value"];
 						it = (*r2)[0].second;
 					} else {
 						throw Exception(Exception::Code::argumentError, it, iEnd);
 					}
 				} else if (auto r = regexSearch(it, iEnd, boost::regex(R"(^\s*(?<value>((?![,\)])\S)*)\s*[,\)])"))) {	// 引数値（ "," ")" まで ）
 					if (const auto& sm = (*r)["value"]; sm.matched) {
-						result.args[currentArgName] = sm;
+						result->args[currentArgName] = sm;
 						it = sm.second;
 					} else {
 						throw Exception(Exception::Code::argumentError, it, iEnd);
@@ -329,10 +358,273 @@ public:
 		return r;
 	}
 
+	struct Port {
+
+		size_t		position = 0;					// 現在の位置
+		size_t		defaultStep = 480;				// デフォルト音長(step)
+		int			octave = 4;						// 現在のオクターブ( -2 ～ 8 )
+		int			velocity = 100;					// 現在のベロシティ(0～127)
+		int			volume = 100;					// 現在のボリューム(0～127)
+		int			pan = 64;						// 現在のパン(0～127)
+		shared_ptr<EventNote>	beforeEvent;		// 直前の音符( ^の対象)
+
+		MmlCompiler::Port	port;
+	};
+
+	struct State {
+		std::map<std::string, Port>	mapPort;
+		std::string					currentPortName;
+
+		// v? ベロシティ
+		const optional<std::string::const_iterator> parseVelocity(const std::string::const_iterator& iBegin, const std::string::const_iterator& iEnd) {
+			try {
+				static const boost::regex re(R"(^\s*(?<command>v)[^a-zA-Z])");
+				const auto r = Inner::regexSearch(iBegin, iEnd, re);
+				if (!r) {
+					return std::nullopt;
+				}
+				const auto v = parseInt((*r)["command"].second, iEnd, true);
+				if (v) {
+					auto& port = mapPort[currentPortName];
+					if( v->sign ){		// 符号付きなら相対指定
+						auto n = port.velocity + v->value;
+						port.velocity = static_cast<decltype(port.velocity)>((std::min)((std::max)(n, 0LL), 127LL));
+					}else{
+						auto n = v->value;
+						if (n < 0 || n > 127) {		// 範囲チェック
+							throw Exception(Exception::Code::vCommandRangeError, iBegin, iEnd);
+						}
+						port.velocity = static_cast<decltype(port.velocity)>(n);
+					}
+					return v->next;
+				}
+			} catch (const Exception& e) {
+				throw e;
+			} catch (...) {
+			}
+			throw Exception(Exception::Code::vCommandError, iBegin, iEnd);
+		};
+
+		// l?? デフォルト音長
+		const optional<std::string::const_iterator> parseDefaultLength(const std::string::const_iterator& iBegin, const std::string::const_iterator& iEnd) {
+			try {
+				static const boost::regex re(R"(^\s*l\s*((\!?[0-9]+\.*)(\s*[\+\-]\!?[0-9]+\.*)*))");
+				const auto r = Inner::regexSearch(iBegin, iEnd, re);		// 数字以外があるなら
+				if (!r) {
+					return std::nullopt;
+				}
+				if (const auto& sm = (*r)[1]; sm.matched) {
+					auto& port = mapPort[currentPortName];
+					auto step = Inner::parseLength(sm.first, sm.second, port.defaultStep);
+					port.defaultStep = step;
+					return (*r)[0].second;
+				}
+				assert(false);
+			} catch (const Exception& e) {
+				throw e;
+			} catch (...) {
+			}
+			throw Exception(Exception::Code::lCommandError, iBegin, iEnd);
+		};
+
+		// o?? オクターブ
+		const optional<std::string::const_iterator> parseOctave(const std::string::const_iterator& iBegin, const std::string::const_iterator& iEnd) {
+			try {
+				static const boost::regex re(R"(^\s*o\s*(?<value>\-?[0-9]+))");
+				const auto r = Inner::regexSearch(iBegin, iEnd, re);
+				if (!r) {
+					return std::nullopt;
+				}
+				if (const auto& sm = (*r)["value"]; sm.matched) {
+					int octave = boost::lexical_cast<int>(sm.str());
+					if (octave < -2 || octave > 8) {		// 範囲チェック
+						throw Exception(Exception::Code::oCommandRangeError, iBegin, iEnd);
+					}
+					mapPort[currentPortName].octave = octave;
+					return (*r)[0].second;
+				}
+				assert(false);
+			} catch (const Exception& e) {
+				throw e;
+			} catch (...) {
+			}
+			throw Exception(Exception::Code::oCommandError, iBegin, iEnd);
+		};
+
+		// t?? テンポ
+		const optional<std::string::const_iterator> parseTempo(const std::string::const_iterator& iBegin, const std::string::const_iterator& iEnd) {
+			try {
+				static const boost::regex re(R"(^\s*t\s*(?<value>\+?[0-9]+(\.[0-9]*)?([eE][\+-]?[0-9]+)?))");
+				const auto r = Inner::regexSearch(iBegin, iEnd, re);
+				if (!r) {
+					return std::nullopt;
+				}
+				if (const auto& sm = (*r)["value"]; sm.matched) {
+					double tempo = boost::lexical_cast<double>(sm.str());
+
+					auto& port = mapPort[currentPortName];
+					auto e = make_shared<EventTempo>();
+					e->position = port.position;
+					e->tempo = tempo;
+					port.port.eventList.insert(e);
+
+					return (*r)[0].second;
+				}
+				assert(false);
+			} catch (const Exception& e) {
+				throw e;
+			} catch (...) {
+			}
+			throw Exception(Exception::Code::tCommandRangeError, iBegin, iEnd);
+		};
+
+		// @?? プログラムチェンジ
+		const optional<std::string::const_iterator> parseProgramChange(const std::string::const_iterator& iBegin, const std::string::const_iterator& iEnd) {
+			try {
+				static const boost::regex re(R"(^\s*@\s*(?<value>[0-9]+))");
+				const auto r = Inner::regexSearch(iBegin, iEnd, re);
+				if (!r) {
+					return std::nullopt;
+				}
+				if (const auto& sm = (*r)["value"]; sm.matched) {
+					int programNo = boost::lexical_cast<int>(sm.str());
+
+					auto& port = mapPort[currentPortName];
+					auto e = make_shared<EventProgramChange>();
+					e->position = port.position;
+					e->programNo = programNo;
+					port.port.eventList.insert(e);
+
+					return (*r)[0].second;
+				}
+				assert(false);
+			} catch (const Exception& e) {
+				throw e;
+			} catch (...) {
+			}
+			throw Exception(Exception::Code::programchangeCommandError, iBegin, iEnd);
+		};
+
+		// r?? 休符
+		const optional<std::string::const_iterator> parseRest(const std::string::const_iterator& iBegin, const std::string::const_iterator& iEnd) {
+			try {
+				static const boost::regex re(R"(^(?<rest>\s*r\s*))" + Inner::sRegexLength);
+				const auto r = Inner::regexSearch(iBegin, iEnd, re);
+				if (!r) {
+					return std::nullopt;
+				}
+				auto& port = mapPort[currentPortName];
+				auto step = Inner::parseLength((*r)["rest"].second, (*r)[0].second, port.defaultStep);
+				port.position += step;
+				port.beforeEvent.reset();
+				return (*r)[0].second;
+			} catch (const Exception& e) {
+				throw e;
+			} catch (...) {
+			}
+			throw Exception(Exception::Code::rCommandRangeError, iBegin, iEnd);
+		};
+
+		// a～g?? 音符
+		const optional<std::string::const_iterator> parseNote(const std::string::const_iterator& iBegin, const std::string::const_iterator& iEnd) {
+			try {
+				static const boost::regex re(R"(^\s*(?<note>[a-g][\+\-]?)\s*)" + Inner::sRegexLength);
+				const auto r = Inner::regexSearch(iBegin, iEnd, re);
+				if (!r) {
+					return std::nullopt;
+				}
+				auto& port = mapPort[currentPortName];
+				auto step = Inner::parseLength((*r)["note"].second, (*r)[0].second, port.defaultStep);
+				auto e = make_shared<EventNote>();
+				e->position = port.position;
+				e->note = [&] {
+					static const std::map<std::string, int> noteTable{
+						{"c",	0},	{"c-",	-1},{"c+",	1},
+						{"d",	2},	{"d-",	1},	{"d+",	3},
+						{"e",	4},	{"e-",	3},	{"e+",	5},
+						{"f",	5},	{"f-",	4},	{"f+",	6},
+						{"g",	7},	{"g-",	6},	{"g+",	8},
+						{"a",	9},	{"a-",	8},	{"a+",	10},
+						{"b",	11},{"b-",	10},{"b+",	12},
+					};
+					if (auto i = noteTable.find((*r)["note"].str()); i != noteTable.end()) {
+						int note = (port.octave + 2) * 12 + i->second;
+						if (note >= 0 && note <= 127) {		// 範囲チェック
+							return note;
+						}
+					}
+					assert(false);
+					throw Exception(Exception::Code::noteCommandRangeError, iBegin, iEnd);
+				}();
+				e->length = step;
+				e->velocity = port.velocity;
+				port.port.eventList.insert(e);
+
+				port.position += step;
+				port.beforeEvent = e;
+
+				return (*r)[0].second;
+			} catch (const Exception& e) {
+				throw e;
+			} catch (...) {
+			}
+			throw Exception(Exception::Code::noteCommandRangeError, iBegin, iEnd);
+		};
+
+		// < > オクターブUPDOWN
+		const optional<std::string::const_iterator> parseOctaveUpDown(const std::string::const_iterator& iBegin, const std::string::const_iterator& iEnd) {
+			try {
+				static const boost::regex re(R"(^\s*([<>]))");
+				const auto r = Inner::regexSearch(iBegin, iEnd, re);
+				if (!r) {
+					return std::nullopt;
+				}
+				auto& port = mapPort[currentPortName];
+				if ((*r)[1].str() == "<") {	// UP
+					port.octave++;
+				} else {					// DOWN
+					port.octave--;
+				}
+				if (port.octave < -2 || port.octave > 8) {	// 範囲チェック
+					throw Exception(Exception::Code::octaveUpDownRangeCommandError, iBegin, iEnd);
+				}
+				return (*r)[0].second;
+			} catch (const Exception& e) {
+				throw e;
+			} catch (...) {
+			}
+			throw Exception(Exception::Code::octaveUpDownCommandError, iBegin, iEnd);
+		};
+
+		// ^ tie (長さを付け足す)
+		const optional<std::string::const_iterator> parseTie(const std::string::const_iterator& iBegin, const std::string::const_iterator& iEnd) {
+			try {
+				static const boost::regex re(R"(^(\s*\^\s*))" + Inner::sRegexLength);
+				const auto r = Inner::regexSearch(iBegin, iEnd, re);
+				if (!r) {
+					return std::nullopt;
+				}
+				auto& port = mapPort[currentPortName];
+				auto step = Inner::parseLength((*r)[1].second, (*r)[0].second, port.defaultStep);
+				if (port.beforeEvent) {					// 直前の音符があれば
+					port.beforeEvent->length += step;	// 音符の音長に足す
+				}
+				port.position += step;
+				return (*r)[0].second;
+			} catch (const Exception& e) {
+				throw e;
+			} catch (...) {
+			}
+			throw Exception(Exception::Code::tieCommandError, iBegin, iEnd);
+		};
+
+	};
+
+
 
 };
 
-const std::string MmlCompiler::Inner::sRegexLength = R"(((\!?[0-9]+)?\.*)?(\s*[\+\-]\!?[0-9]+\.*)*)";
+const std::string MmlCompiler::Inner::sRegexLength = R"((?<len>(\!?[0-9]+)?\.*)?(\s*[\+\-]\!?[0-9]+\.*)*)";
 
 MmlCompiler::Exception::Exception(Code code_, const std::string::const_iterator& itBegin, const std::string::const_iterator& itEnd, const std::string& annotate_)
 	:std::runtime_error(getMessage(code_))
@@ -347,354 +639,140 @@ MmlCompiler::Result MmlCompiler::compile(const std::string& mml) {
 
 	using namespace std;
 
-	struct Port {
-
-		size_t	position = 0;					// 現在の位置
-		size_t	defaultStep = 480;				// デフォルト音長(step)
-		int		octave = 4;						// 現在のオクターブ( -2 ～ 8 )
-		int		velocity = 100;					// 現在のベロシティ( 0 ～ 127)
-		shared_ptr<EventNote>	beforeEvent;	// 直前の音符( ^の対象)
-
-		MmlCompiler::Port	port;
-	};
-
-	struct State {
-		const std::string& mml;
-
-		std::string::const_iterator	it;
-
-		State(const std::string& s)
-			:mml(s), it(s.cbegin())
-		{
-		}
-
-		std::map<std::string, Port>	mapPort;
-		std::string					currentPortName;
-
-	}state(mml);
-
-	// l?? デフォルト音長
-	const auto fDefaultLength = [&state] {
-		try {
-			static const boost::regex re(R"(^\s*l\s*((\!?[0-9]+\.*)(\s*[\+\-]\!?[0-9]+\.*)*))");
-			const auto r = Inner::regexSearch(state.it, state.mml.cend(), re);		// 数字以外があるなら
-			if (!r) {
-				return false;
-			}
-			if (const auto& sm = (*r)[1]; sm.matched) {
-				auto& port = state.mapPort[state.currentPortName];
-				auto step = Inner::parseLength(sm.first, sm.second, port.defaultStep);
-				port.defaultStep = step;
-				state.it = (*r)[0].second;
-				return true;
-			}
-			assert(false);
-		} catch (const Exception& e) {
-			throw e;
-		} catch (...) {
-		}
-		throw Exception(Exception::Code::lCommandError, state.it, state.mml.cend());
-	};
-
-	// o?? オクターブ
-	const auto fOctave = [&state] {
-		try {
-			static const boost::regex re(R"(^\s*o\s*(?<value>\-?[0-9]+))");
-			boost::smatch match;
-			if (!boost::regex_search(state.it, state.mml.cend(), match, re, boost::match_not_dot_newline | boost::match_single_line)) {
-				return false;
-			}
-			if (const auto& sm = match["value"]; sm.matched) {
-				int octave = boost::lexical_cast<int>(sm.str());
-				if (octave < -2 || octave > 8) {		// 範囲チェック
-					throw Exception(Exception::Code::oCommandRangeError, state.it, state.mml.cend());
-				}
-				state.mapPort[state.currentPortName].octave = octave;
-				state.it = match[0].second;
-				return true;
-			}
-			assert(false);
-		} catch (const Exception& e) {
-			throw e;
-		} catch (...) {
-		}
-		throw Exception(Exception::Code::oCommandError, state.it, state.mml.cend());
-	};
-
-	// t?? テンポ
-	const auto fTempo = [&state] {
-		try {
-			static const boost::regex re(R"(^\s*t\s*(?<value>\+?[0-9]+(\.[0-9]*)?([eE][\+-]?[0-9]+)?))");
-			boost::smatch match;
-			if (!boost::regex_search(state.it, state.mml.cend(), match, re, boost::match_not_dot_newline | boost::match_single_line)) {
-				return false;
-			}
-			if (const auto& sm = match["value"]; sm.matched) {
-				double tempo = boost::lexical_cast<double>(sm.str());
-
-				auto& port = state.mapPort[state.currentPortName];
-				auto e = make_shared<EventTempo>();
-				e->position = port.position;
-				e->tempo = tempo;
-				port.port.eventList.insert(e);
-
-				state.it = match[0].second;
-				return true;
-			}
-			assert(false);
-		} catch (const Exception& e) {
-			throw e;
-		} catch (...) {
-		}
-		throw Exception(Exception::Code::tCommandRangeError, state.it, state.mml.cend());
-	};
-
-	// @?? プログラムチェンジ
-	const auto fProgramChange = [&state] {
-		try {
-			static const boost::regex re(R"(^\s*@\s*(?<value>[0-9]+))");
-			boost::smatch match;
-			if (!boost::regex_search(state.it, state.mml.cend(), match, re, boost::match_not_dot_newline | boost::match_single_line)) {
-				return false;
-			}
-			if (const auto& sm = match["value"]; sm.matched) {
-				int programNo = boost::lexical_cast<int>(sm.str());
-
-				auto& port = state.mapPort[state.currentPortName];
-				auto e = make_shared<EventProgramChange>();
-				e->position = port.position;
-				e->programNo = programNo;
-				port.port.eventList.insert(e);
-
-				state.it = match[0].second;
-				return true;
-			}
-			assert(false);
-		} catch (const Exception& e) {
-			throw e;
-		} catch (...) {
-		}
-		throw Exception(Exception::Code::programchangeCommandError, state.it, state.mml.cend());
-	};
-
-	// r?? 休符
-	const auto fRest = [&state] {
-		try {
-			static const boost::regex re(R"(^(\s*r\s*))" + Inner::sRegexLength);
-			const auto r = Inner::regexSearch(state.it, state.mml.cend(), re);
-			if (!r) {
-				return false;
-			}
-			auto& port = state.mapPort[state.currentPortName];
-			auto step = Inner::parseLength((*r)[1].second, (*r)[0].second, port.defaultStep);
-			port.position += step;
-			port.beforeEvent.reset();
-			state.it = (*r)[0].second;
-			return true;
-		} catch (const Exception& e) {
-			throw e;
-		} catch (...) {
-		}
-		throw Exception(Exception::Code::rCommandRangeError, state.it, state.mml.cend());
-	};
-
-	// a～g?? 音符
-	const auto fNote = [&state] {
-		try {
-			static const boost::regex re(R"(^\s*(?<note>[a-g][\+\-]?)\s*)" + Inner::sRegexLength);
-			const auto r = Inner::regexSearch(state.it, state.mml.cend(), re);
-			if (!r) {
-				return false;
-			}
-			auto& port = state.mapPort[state.currentPortName];
-			auto step = Inner::parseLength((*r)["note"].second, (*r)[0].second, port.defaultStep);
-			auto e = make_shared<EventNote>();
-			e->position = port.position;
-			e->note = [&] {
-				static const std::map<std::string, int> noteTable{
-					{"c",	0},	{"c-",	-1},{"c+",	1},
-					{"d",	2},	{"d-",	1},	{"d+",	3},
-					{"e",	4},	{"e-",	3},	{"e+",	5},
-					{"f",	5},	{"f-",	4},	{"f+",	6},
-					{"g",	7},	{"g-",	6},	{"g+",	8},
-					{"a",	9},	{"a-",	8},	{"a+",	10},
-					{"b",	11},{"b-",	10},{"b+",	12},
-				};
-				if (auto i = noteTable.find((*r)["note"].str()); i != noteTable.end()) {
-					int note = (port.octave + 2) * 12 + i->second;
-					if (note >= 0 && note <= 127) {		// 範囲チェック
-						return note;
-					}
-				}
-				assert(false);
-				throw Exception(Exception::Code::noteCommandRangeError, state.it, state.mml.cend());
-			}();
-			e->length = step;
-			e->velocity = port.velocity;
-			port.port.eventList.insert(e);
-
-			port.position += step;
-			port.beforeEvent = e;
-
-			state.it = (*r)[0].second;
-			return true;
-		} catch (const Exception& e) {
-			throw e;
-		} catch (...) {
-		}
-		throw Exception(Exception::Code::noteCommandRangeError, state.it, state.mml.cend());
-	};
-
-	// < > オクターブUPDOWN
-	const auto fOctaveUpDown = [&state] {
-		try {
-			static const boost::regex re(R"(^\s*([<>]))");
-			const auto r = Inner::regexSearch(state.it, state.mml.cend(), re);
-			if (!r) {
-				return false;
-			}
-			auto& port = state.mapPort[state.currentPortName];
-			if ((*r)[1].str() == "<") {	// UP
-				port.octave++;
-			} else {					// DOWN
-				port.octave--;
-			}
-			if (port.octave < -2 || port.octave > 8) {	// 範囲チェック
-				throw Exception(Exception::Code::octaveUpDownRangeCommandError, state.it, state.mml.cend());
-			}
-			state.it = (*r)[0].second;
-			return true;
-		} catch (const Exception& e) {
-			throw e;
-		} catch (...) {
-		}
-		throw Exception(Exception::Code::octaveUpDownCommandError, state.it, state.mml.cend());
-	};
-
-	// ^ tie (長さを付け足す)
-	const auto fTie = [&state] {
-		try {
-			static const boost::regex re(R"(^(\s*\^\s*))" + Inner::sRegexLength);
-			const auto r = Inner::regexSearch(state.it, state.mml.cend(), re);
-			if (!r) {
-				return false;
-			}
-			auto& port = state.mapPort[state.currentPortName];
-			auto step = Inner::parseLength((*r)[1].second, (*r)[0].second, port.defaultStep);
-			if (port.beforeEvent) {					// 直前の音符があれば
-				port.beforeEvent->length += step;	// 音符の音長に足す
-			}
-			port.position += step;
-			state.it = (*r)[0].second;
-			return true;
-		} catch (const Exception& e) {
-			throw e;
-		} catch (...) {
-		}
-		throw Exception(Exception::Code::tieCommandError, state.it, state.mml.cend());
-	};
+	Inner::State state;
+	std::string::const_iterator	it = mml.cbegin();
 
 	try {
 		while (true) {
 
-			if (auto it = Inner::parseCommant(state.it, state.mml.cend())) {	// コメント
-				state.it = *it;
+			if (auto r = Inner::parseCommant(it, mml.cend())) {	// コメント
+				it = *r;
 				continue;
 			}
 
-			if (auto r = Inner::parseFunction(state.it, state.mml.cend(), "createPort")) {		// createPort
+			if (auto r = Inner::parseFunction(it, mml.cend(), "createPort")) {		// createPort
 				const auto name = (*r).findArgString("name").value_or("");
 				if (name.empty()) {
-					throw Exception(Exception::Code::createPortPortNameError, state.it, mml.cend());
+					throw Exception(Exception::Code::createPortPortNameError, it, mml.cend());
 				}
-				if (auto r2 = state.mapPort.insert({ name ,Port() }); !r2.second) {			// port追加 
-					throw Exception(Exception::Code::createPortDuplicateError, state.it, mml.cend());
+				if (auto r2 = state.mapPort.insert({ name ,Inner::Port() }); !r2.second) {			// port追加 
+					throw Exception(Exception::Code::createPortDuplicateError, it, mml.cend());
 				} else {
 					auto& port = r2.first->second;
-					const auto ch = r->findArgUInt("channel").value_or(0);
-					if (ch < 1 || ch > 16) {
-						throw Exception(Exception::Code::createPortChannelError, state.it, mml.cend());
+					const auto ch = r->findArgInt("channel", false);
+					if( !ch || ch->value < 1 || ch->value > 16 ){
+						throw Exception(Exception::Code::createPortChannelError, it, mml.cend());
 					}
-					port.port.channel = static_cast<decltype(port.port.channel)>(ch - 1);
+					port.port.channel = static_cast<decltype(port.port.channel)>(ch->value - 1);
 				}
 
-				state.it = r->next;
+				it = r->next;
 				continue;
 			}
 
-			if (auto r = Inner::parseFunction(state.it, state.mml.cend(), "port")) {			// port
+			if (auto r = Inner::parseFunction(it, mml.cend(), "port")) {			// port
 				const auto name = (*r).findArgString("0").value_or("");
 				if (name.empty()) {
-					throw Exception(Exception::Code::portNameError, state.it, mml.cend());
+					throw Exception(Exception::Code::portNameError, it, mml.cend());
 				}
 				state.mapPort[name];			// 作成を担保
 				state.currentPortName = name;
-				state.it = r->next;
+				it = r->next;
 				continue;
 			}
 
-			if (auto r = Inner::parseFunction(state.it, state.mml.cend(), "volume|V")) {		// volume|V
-				const auto vol = r->findArgUInt("0").value_or(-1);
-				if (vol < 0 || vol > 127) {
-					throw Exception(Exception::Code::volumeError, state.it, mml.cend());
+			if (auto r = Inner::parseFunction(it, mml.cend(), "volume|V")) {		// volume|V
+				const auto v = r->findArgInt("0", true);
+				if (!v) {
+					throw Exception(Exception::Code::volumeError, it, mml.cend());
+				}
+				auto& port = state.mapPort[state.currentPortName];
+				if( v->sign ){		// 符号があるなら相対指定
+					auto n = port.volume + v->value;
+					port.volume = static_cast<decltype(port.volume)>((std::min)((std::max)(n, 0LL), 127LL));
+				}else{
+					if (v->value < 0 || v->value > 127) {
+						throw Exception(Exception::Code::volumeRangeError, it, mml.cend());
+					}
+					port.volume = static_cast<decltype(port.volume)>(v->value);
 				}
 
-				auto& port = state.mapPort[state.currentPortName];
 				auto e = make_shared<EventVolume>();
 				e->position = port.position;
-				e->volume = static_cast<decltype(e->volume)>(vol);
+				e->volume = port.volume;
 				port.port.eventList.insert(e);
 
-				state.it = r->next;
+				it = r->next;
 				continue;
 			}
 
-			if (auto r = Inner::parseFunction(state.it, state.mml.cend(), "pan|panpot")) {		// pan|panpot
-				const auto n = r->findArgUInt("0").value_or(-1);
-				if (n < 0 || n > 127) {
-					throw Exception(Exception::Code::panError, state.it, mml.cend());
+			if (auto r = Inner::parseFunction(it, mml.cend(), "pan|panpot")) {		// pan|panpot
+				const auto v = r->findArgInt("0", true);
+				if (!v) {
+					throw Exception(Exception::Code::panError, it, mml.cend());
+				}
+				auto& port = state.mapPort[state.currentPortName];
+				if (v->sign) {		// 符号があるなら相対指定
+					auto n = port.pan + v->value;
+					port.pan = static_cast<decltype(port.volume)>((std::min)((std::max)(n, 0LL), 127LL));
+				} else {
+					if (v->value < 0 || v->value > 127) {
+						throw Exception(Exception::Code::panRangeError, it, mml.cend());
+					}
+					port.pan = static_cast<decltype(port.volume)>(v->value);
 				}
 
-				auto& port = state.mapPort[state.currentPortName];
 				auto e = make_shared<EventPan>();
 				e->position = port.position;
-				e->pan = static_cast<decltype(e->pan)>(n);
+				e->pan = port.pan;
 				port.port.eventList.insert(e);
 
-				state.it = r->next;
+				it = r->next;
 				continue;
 			}
 
-			if (fDefaultLength()) {			// l? デフォルト音長
+			if (auto r = state.parseVelocity(it, mml.cend())) {						// v? ベロシティ
+				it = (*r);
 				continue;
 			}
-			if (fOctave()) {				// o? オクターブ
+			if( auto r = state.parseDefaultLength(it, mml.cend()) ){				// l? デフォルト音長
+				it = (*r);
 				continue;
 			}
-			if (fTempo()) {					// t? テンポ
+			if (auto r = state.parseOctave(it, mml.cend())) {						// o? オクターブ
+				it = (*r);
 				continue;
 			}
-			if (fProgramChange()) {			// @? プログラムチェンジ
+			if (auto r = state.parseTempo(it, mml.cend())) {						// t? テンポ
+				it = (*r);
 				continue;
 			}
-			if (fRest()) {					// r 休符
+			if (auto r = state.parseProgramChange(it, mml.cend())) {				// @? プログラムチェンジ
+				it = (*r);
 				continue;
 			}
-			if (fNote()) {					// a～g 音符
+			if (auto r = state.parseRest(it, mml.cend())) {							// r 休符
+				it = (*r);
 				continue;
 			}
-			if (fOctaveUpDown()) {			// < > オクターブUPDOWN
+			if (auto r = state.parseNote(it, mml.cend())) {							// a～g 音符
+				it = (*r);
 				continue;
 			}
-			if (fTie()) {					// ^ tie (長さを付け足す)
+			if (auto r = state.parseOctaveUpDown(it, mml.cend())) {					// < > オクターブUPDOWN
+				it = (*r);
+				continue;
+			}
+			if (auto r = state.parseTie(it, mml.cend())) {							// ^ tie (長さを付け足す)
+				it = (*r);
 				continue;
 			}
 
 			static const boost::regex re(R"(^\s*(\S+))");
 			boost::smatch match;
-			if (boost::regex_search(state.it, state.mml.cend(), match, re, boost::match_not_dot_newline | boost::match_single_line)) {
+			if (boost::regex_search(it, mml.cend(), match, re, boost::match_not_dot_newline | boost::match_single_line)) {
 				if (match[1].matched) {
-					throw Exception(Exception::Code::unknownError, match[1].first, state.mml.cend());
+					throw Exception(Exception::Code::unknownError, match[1].first, mml.cend());
 				}
 				break;
 			}
@@ -711,8 +789,8 @@ MmlCompiler::Result MmlCompiler::compile(const std::string& mml) {
 	} catch (const Exception& e) {
 		throw e;
 	} catch (const std::exception& e) {
-		throw Exception(Exception::Code::stdEexceptionError, state.it, state.mml.cend(), e.what());
+		throw Exception(Exception::Code::stdEexceptionError, it, mml.cend(), e.what());
 	} catch (...) {
-		throw Exception(Exception::Code::unknownError, state.it, state.mml.cend());
+		throw Exception(Exception::Code::unknownError, it, mml.cend());
 	}
 }
