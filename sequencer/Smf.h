@@ -55,6 +55,22 @@ namespace rlib::sequencer {
 			{}
 		};
 
+		struct EventControlChange : public EventCh {
+			enum class Type {
+				modulation = 1,
+				volume = 7,
+				pan = 10,
+				expression = 11,
+			};
+			Type	type = Type::modulation;
+			uint8_t	value = 0;
+			EventControlChange(size_t position, uint8_t channel, Type type_, uint8_t value_)
+				:EventCh(position, channel)
+				, type(type_)
+				, value(value_)
+			{}
+		};
+
 		struct EventMeta : public Event {
 
 			enum class Type {
@@ -74,7 +90,7 @@ namespace rlib::sequencer {
 				keySignature = 0x59,	// 調号
 				sequencerLocal = 0x7f,
 			};
-			Type						type = Type::sequenceNo;
+			Type					type = Type::sequenceNo;
 			std::vector<uint8_t>	data;
 
 			EventMeta(size_t position)
