@@ -51,7 +51,7 @@ int main(const int argc, const char* const argv[])
 		}();
 
 		try {
-			const sequencer::Smf smf = sequencer::mmlToSmf(mml);
+			const midi::Smf smf = sequencer::mmlToSmf(mml);
 			auto fileImage = smf.getFileImage();
 
 			auto path = std::filesystem::u8path(output);
