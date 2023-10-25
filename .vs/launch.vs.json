@@ -4,14 +4,27 @@
   "configurations": [
     {
       "type": "cppgdb",
-      "name": "mmlcompiler",
+      "name": "mmltosmf",
       "project": "CMakeLists.txt",
-      "projectTarget": "mmlcompiler",
+      "projectTarget": "mmltosmf",
       "comment": "Learn how to configure WSL debugging. See here for more info http://aka.ms/vslinuxdebug",
       "debuggerConfiguration": "gdb",
       "args": [
         "-i../../../test.mml",
-        "-o../../../test.mid",
+        "-o../../../out.mid"
+      ],
+      "env": {}
+    },
+    {
+      "type": "cppgdb",
+      "name": "smftomml",
+      "project": "CMakeLists.txt",
+      "projectTarget": "smftomml",
+      "comment": "Learn how to configure WSL debugging. See here for more info http://aka.ms/vslinuxdebug",
+      "debuggerConfiguration": "gdb",
+      "args": [
+        "-i../../../out.mid",
+        "-o../../../out.mml"
       ],
       "env": {}
     }
