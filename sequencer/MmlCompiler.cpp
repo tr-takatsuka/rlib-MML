@@ -359,16 +359,15 @@ public:
 	}
 
 	struct Port {
-
-		size_t		position = 0;					// 現在の位置
-		size_t		defaultStep = 480;				// デフォルト音長(step)
-		int			octave = 4;						// 現在のオクターブ( -2 ～ 8 )
-		int			velocity = 100;					// 現在のベロシティ(0～127)
-		int			volume = 100;					// 現在のボリューム(0～127)
-		int			pan = 64;						// 現在のパン(0～127)
-		shared_ptr<EventNote>	beforeEvent;		// 直前の音符( ^の対象)
-
-		MmlCompiler::Port	port;
+		size_t					position = 0;			// 現在の位置
+		size_t					defaultStep = 480;		// デフォルト音長(step)
+		int						octave = 4;				// 現在のオクターブ( -2 ～ 8 )
+		int						velocity = 100;			// 現在のベロシティ(0～127)
+		int						volume = 100;			// 現在のボリューム(0～127)
+		int						pan = 64;				// 現在のパン(0～127)
+		shared_ptr<EventNote>	beforeEvent;			// 直前の音符( ^の対象)
+		bool					noteUnmove = false;		// Noteで現在位置を進めないモード
+		MmlCompiler::Port		port;
 	};
 
 	struct State {
@@ -435,12 +434,14 @@ public:
 				if (!r) {
 					return std::nullopt;
 				}
+				auto& port = mapPort[currentPortName];
 				if (const auto& sm = (*r)["value"]; sm.matched) {
 					int octave = boost::lexical_cast<int>(sm.str());
 					if (octave < -2 || octave > 8) {		// 範囲チェック
 						throw Exception(Exception::Code::oCommandRangeError, iBegin, iEnd);
 					}
-					mapPort[currentPortName].octave = octave;
+					port.octave = octave;
+					port.beforeEvent.reset();				// '^'の対象をクリア
 					return (*r)[0].second;
 				}
 				assert(false);
@@ -516,7 +517,7 @@ public:
 				auto& port = mapPort[currentPortName];
 				auto step = Inner::parseLength((*r)["rest"].second, (*r)[0].second, port.defaultStep);
 				port.position += step;
-				port.beforeEvent.reset();
+				port.beforeEvent.reset();				// '^'の対象をクリア
 				return (*r)[0].second;
 			} catch (const Exception& e) {
 				throw e;
@@ -553,16 +554,15 @@ public:
 							return note;
 						}
 					}
-					assert(false);
 					throw Exception(Exception::Code::noteCommandRangeError, iBegin, iEnd);
 				}();
 				e->length = step;
 				e->velocity = port.velocity;
 				port.port.eventList.insert(e);
-
-				port.position += step;
+				if (!port.noteUnmove) {
+					port.position += step;
+				}
 				port.beforeEvent = e;
-
 				return (*r)[0].second;
 			} catch (const Exception& e) {
 				throw e;
@@ -588,6 +588,7 @@ public:
 				if (port.octave < -2 || port.octave > 8) {	// 範囲チェック
 					throw Exception(Exception::Code::octaveUpDownRangeCommandError, iBegin, iEnd);
 				}
+				port.beforeEvent.reset();				// '^'の対象をクリア
 				return (*r)[0].second;
 			} catch (const Exception& e) {
 				throw e;
@@ -609,7 +610,9 @@ public:
 				if (port.beforeEvent) {					// 直前の音符があれば
 					port.beforeEvent->length += step;	// 音符の音長に足す
 				}
-				port.position += step;
+				if (!port.noteUnmove || !port.beforeEvent) {
+					port.position += step;
+				}
 				return (*r)[0].second;
 			} catch (const Exception& e) {
 				throw e;
@@ -618,9 +621,26 @@ public:
 			throw Exception(Exception::Code::tieCommandError, iBegin, iEnd);
 		};
 
+		// ' Noteで現在位置を進めるか否かモード
+		const optional<std::string::const_iterator> parseNoteUnmove(const std::string::const_iterator& iBegin, const std::string::const_iterator& iEnd) {
+			try {
+				static const boost::regex re(R"(^\s*('))");
+				const auto r = Inner::regexSearch(iBegin, iEnd, re);
+				if (!r) {
+					return std::nullopt;
+				}
+				auto& port = mapPort[currentPortName];
+				port.noteUnmove = !port.noteUnmove;		// 反転
+				port.beforeEvent.reset();				// '^'の対象をクリア
+				return (*r)[0].second;
+			} catch (const Exception& e) {
+				throw e;
+			} catch (...) {
+			}
+			throw Exception(Exception::Code::octaveUpDownCommandError, iBegin, iEnd);
+		};
+
 	};
-
-
 
 };
 
@@ -675,7 +695,9 @@ MmlCompiler::Result MmlCompiler::compile(const std::string& mml) {
 				if (name.empty()) {
 					throw Exception(Exception::Code::portNameError, it, mml.cend());
 				}
-				state.mapPort[name];			// 作成を担保
+				if (const auto i = state.mapPort.find(name); i == state.mapPort.end()) {	// 存在しないportならエラー
+					throw Exception(Exception::Code::portNameError, it, mml.cend());
+				}
 				state.currentPortName = name;
 				it = r->next;
 				continue;
@@ -764,6 +786,10 @@ MmlCompiler::Result MmlCompiler::compile(const std::string& mml) {
 				continue;
 			}
 			if (auto r = state.parseTie(it, mml.cend())) {							// ^ tie (長さを付け足す)
+				it = (*r);
+				continue;
+			}
+			if (auto r = state.parseNoteUnmove(it, mml.cend())) {					// ' noteで位置更新するか否かモード
 				it = (*r);
 				continue;
 			}

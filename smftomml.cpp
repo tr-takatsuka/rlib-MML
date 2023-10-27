@@ -4,7 +4,7 @@
 #include <boost/program_options.hpp>
 
 #include "./stringformat/StringFormat.h"
-#include "./sequencer/MmlToSmf.h"
+#include "./sequencer/SmfToMml.h"
 
 using namespace rlib;
 
@@ -29,7 +29,7 @@ int main(const int argc, const char* const argv[])
 		po::store(po::command_line_parser(argc, argv).options(desc).positional(pd).run(), vm);
 
 		if (vm.count("version")) {
-			std::cout << "rlib-MML version 1.0.1" << std::endl;
+			std::cout << "rlib-MML smftomml version 1.0.0" << std::endl;
 			return 0;
 		}
 
@@ -40,18 +40,18 @@ int main(const int argc, const char* const argv[])
 
 		po::notify(vm);
 
-		const std::string mml = [&] {
+		auto fs = [&] {
 			auto path = std::filesystem::u8path(input);
 			std::fstream fs(path, std::ios::in | std::ios::binary);
 			if (fs.fail()) {
 				throw std::runtime_error("input file open error.");
 			}
-			const std::istreambuf_iterator<char> begin(fs);
-			return std::string(begin, std::istreambuf_iterator<char>());
+			return fs;
 		}();
 
 		try {
-			const sequencer::Smf smf = sequencer::mmlToSmf(mml);
+			auto smf = midi::Smf::fromStream(fs);
+			const std::string mml = sequencer::smfToMml(smf);
 			auto fileImage = smf.getFileImage();
 
 			auto path = std::filesystem::u8path(output);
@@ -59,30 +59,12 @@ int main(const int argc, const char* const argv[])
 			if (fs.fail()) {
 				throw std::runtime_error("output file open error.");
 			}
-			fs.write(reinterpret_cast<const char* const>(fileImage.data()), fileImage.size());
+			fs.write(mml.data(), mml.size());
 
-		} catch (const sequencer::MmlCompiler::Exception& e) {
-
-			const size_t lineNumber = [&] {	// 行番号取得
-				static const std::regex re(R"(\r\n|\n|\r)");
-				size_t lf = 0;
-				for (auto i = std::sregex_token_iterator(mml.cbegin(), e.it, re, -1); i != std::sregex_token_iterator(); i++) lf++;
-				return lf;
-			}();
-			const auto msg = sequencer::MmlCompiler::Exception::getMessage(e.code);	// エラーメッセージ取得
-			auto errorWord = [&] {
-				std::string s(e.errorWord);
-				std::smatch m;
-				if (std::regex_search(s, m, std::regex(R"(\r\n|\n|\r)"))) {
-					s = std::string(s.cbegin(), m[0].first);
-				}
-				return s;
-			}();
-
-			const auto s = string::format(R"(line %d %s : %s)", lineNumber, errorWord, msg);
+		} catch (const std::exception& e) {
+			const auto s = e.what();
 			throw std::runtime_error(s);
 		}
-
 	} catch (std::exception& e) {
 		std::cerr << e.what() << std::endl;
 		return 1;

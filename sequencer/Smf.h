@@ -1,127 +1,47 @@
 ﻿#pragma once
 
-namespace rlib::sequencer {
+#include "MidiEvent.h"
+
+namespace rlib::midi {
 
 	class Smf {
 		class Inner;
-		int timeBase = 480;			// 分解能(4分音符あたりのカウント)
 	public:
 		struct Event {
-			const size_t	position;
-			virtual ~Event() {}
-		protected:
-			Event(size_t position_)
+			const uint64_t								position;
+			const std::shared_ptr<const midi::Event>	event;
+
+			Event(decltype(position) position_, const std::shared_ptr<const midi::Event> event_)
 				:position(position_)
+				, event(event_)
 			{}
-		};
 
-		struct EventCh : public Event {
-			const uint8_t	channel;	// チャンネル 0～15
-		protected:
-			EventCh(size_t position, uint8_t channel_)
-				:Event(position)
-				, channel(channel_)
-			{}
-		};
-
-		struct EventNote : public EventCh {
-			const uint8_t	note;		// 0～127
-			const uint8_t	velocity;	// 0～127
-		protected:
-			EventNote(size_t position, uint8_t channel, uint8_t note_, uint8_t velocity_)
-				:EventCh(position, channel)
-				, note(note_)
-				, velocity(velocity_)
-			{}
-		};
-
-		struct EventNoteOn : public EventNote {
-			EventNoteOn(size_t position, uint8_t channel, uint8_t note, uint8_t velocity)
-				:EventNote(position, channel, note, velocity)
-			{}
-		};
-
-		struct EventNoteOff : public EventNote {
-			EventNoteOff(size_t position, uint8_t channel, uint8_t note, uint8_t velocity)
-				:EventNote(position, channel, note, velocity)
-			{}
-		};
-
-		struct EventProgramChange : public EventCh {
-			const uint8_t	programNo;		// 0～127
-			EventProgramChange(size_t position, uint8_t channel, uint8_t programNo_)
-				:EventCh(position, channel)
-				, programNo(programNo_)
-			{}
-		};
-
-		struct EventControlChange : public EventCh {
-			enum class Type {
-				modulation = 1,
-				volume = 7,
-				pan = 10,
-				expression = 11,
+			struct Less {
+				typedef void is_transparent;
+				bool operator()(const Event& a, const Event& b)				const { return a.position < b.position; }
+				bool operator()(const decltype(position) a, const Event& b)	const { return a < b.position; }
+				bool operator()(const Event& a, const decltype(position) b)	const { return a.position < b; }
 			};
-			Type	type = Type::modulation;
-			uint8_t	value = 0;
-			EventControlChange(size_t position, uint8_t channel, Type type_, uint8_t value_)
-				:EventCh(position, channel)
-				, type(type_)
-				, value(value_)
-			{}
-		};
 
-		struct EventMeta : public Event {
-
-			enum class Type {
-				sequenceNo = 0x0,		// シーケンス番号
-				text = 0x1,
-				copyright = 0x2,
-				sequenceName = 0x3,
-				instrumentName = 0x4,
-				words = 0x5,			// 歌詞
-				marker = 0x6,
-				channelPrefix = 0x20,
-				port = 0x21,
-				endOfTrack = 0x2f,
-				tempo = 0x51,
-				smpte = 0x54,
-				meter = 0x58,
-				keySignature = 0x59,	// 調号
-				sequencerLocal = 0x7f,
-			};
-			Type					type = Type::sequenceNo;
-			std::vector<uint8_t>	data;
-
-			EventMeta(size_t position)
-				:Event(position)
-			{}
-
-			static EventMeta createTempo(size_t position, double tempo);
-			static EventMeta createEndOfTrack(size_t position);
-		};
-
-		struct LessEvent {
-			typedef void is_transparent;
-			bool operator()(const std::shared_ptr<const Event>& a, const std::shared_ptr<const Event>& b)const {
-				return a->position < b->position;
-			}
-			bool operator()(const size_t a, const std::shared_ptr<const Event>& b)const {
-				return a < b->position;
-			}
-			bool operator()(const std::shared_ptr<const Event>& a, const size_t b)const {
-				return a->position < b;
-			}
 		};
 
 		class Track {
 		public:
-			std::multiset<std::shared_ptr<const Event>, LessEvent>	events;
+			std::multiset<Event, Event::Less>	events;
 		};
 	public:
+		int					timeBase = 480;			// 分解能(4分音符あたりのカウント)
 		std::list<Track>	tracks;
 	public:
 		Smf() {}
+		Smf(Smf&& smf)
+			:timeBase(smf.timeBase)
+			, tracks(std::move(smf.tracks))
+		{}
+		Smf(const Smf& smf)
+			:timeBase(smf.timeBase)
+			, tracks(smf.tracks)
+		{}
 
 		// SMFデータ取得
 		std::vector<uint8_t> getFileImage() const;
@@ -131,6 +51,10 @@ namespace rlib::sequencer {
 			os.write(reinterpret_cast<const char*>(v.data()), v.size());
 			return os;
 		}
+
+		static Smf fromStream(std::istream& is);
+
+		static Smf convertTimebase(const Smf& smf, int timeBase);
 
 	};
 

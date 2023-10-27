@@ -34,15 +34,9 @@ namespace rlib::sequencer {
 
 		struct LessEvent {
 			typedef void is_transparent;
-			bool operator()(const std::shared_ptr<const Event>& a, const std::shared_ptr<const Event>& b)const {
-				return a->position < b->position;
-			}
-			bool operator()(const size_t a, const std::shared_ptr<const Event>& b)const {
-				return a < b->position;
-			}
-			bool operator()(const std::shared_ptr<const Event>& a, const size_t b)const {
-				return a->position < b;
-			}
+			bool operator()(const std::shared_ptr<const Event>& a, const std::shared_ptr<const Event>& b)	const { return a->position < b->position; }
+			bool operator()(const size_t a, const std::shared_ptr<const Event>& b)							const { return a < b->position; }
+			bool operator()(const std::shared_ptr<const Event>& a, const size_t b)							const { return a->position < b; }
 		};
 
 		struct Port {
