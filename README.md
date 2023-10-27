@@ -38,6 +38,7 @@ We have confirmed the operation in the following environment.
 |t[tempo]|Specify the tempo. The value can be specified from 1.0 to 999.0. A small number can be written.| "t120 cde"  → CDE at tempo 120.|
 |@[program no]|Specify the program number (tone). Values ​​are 0-127.| "@3 cde"  →  CDE atprogram number 3.|
 |v[velocity]|Specifies the velocity (the strength with which you hit the keyboard on a piano). Values ​​are 0-127.| "v123 cde"  → CDE at velocity 123.|
+|'[switch chord mode]|Switches to a mode where the current position is not advanced by notes. Use rests to advance the current position. Use when two or more notes are pronounced simultaneously, e.g. chords.| "l8 'cegr dfar'  "<br>→ 8th note C major chord and D miner chords.|
 
 ### length
 - This is how to specify the length of the note.
