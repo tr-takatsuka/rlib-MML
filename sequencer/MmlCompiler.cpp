@@ -9,7 +9,6 @@
 #include "./MmlCompiler.h"
 #include "../stringformat/StringFormat.h"
 
-using namespace std;
 using namespace rlib;
 using namespace rlib::sequencer;
 
@@ -33,14 +32,18 @@ std::string MmlCompiler::Exception::getMessage(Code code) {
 		{Code::octaveUpDownCommandError,		u8R"(オクターブアップダウン（ < , > コマンド）に誤りがあります)"},
 		{Code::octaveUpDownRangeCommandError,	u8R"(オクターブ値が範囲外です)" },
 		{Code::tieCommandError,					u8R"(タイ（^ コマンド）に誤りがあります)"},
-		{Code::createPortPortNameError,			u8R"(createPort コマンドのポート名指定に誤りがあります)"},
-		{Code::createPortDuplicateError,		u8R"(createPort コマンドでポート名が重複しています)" },
-		{Code::createPortChannelError,			u8R"(createPort コマンドのチャンネル指定に誤りがあります)" },
-		{Code::portNameError,					u8R"(port コマンドのポート名指定に誤りがあります)" },
-		{Code::volumeError,						u8R"(volume コマンドの指定に誤りがあります)" },
-		{Code::volumeRangeError,				u8R"(volume コマンドの値が範囲外です)" },
-		{Code::panError,						u8R"(pan コマンドの指定に誤りがあります)" },
-		{Code::panRangeError,					u8R"(pan コマンドの値が範囲外です)" },
+		{Code::createPortPortNameError,			u8R"(CreatePort コマンドのポート名指定に誤りがあります)"},
+		{Code::createPortDuplicateError,		u8R"(CreatePort コマンドでポート名が重複しています)" },
+		{Code::createPortChannelError,			u8R"(CreatePort コマンドのチャンネル指定に誤りがあります)" },
+		{Code::portNameError,					u8R"(Port コマンドのポート名指定に誤りがあります)" },
+		{Code::volumeError,						u8R"(Volume コマンドの指定に誤りがあります)" },
+		{Code::volumeRangeError,				u8R"(Volume コマンドの値が範囲外です)" },
+		{Code::panError,						u8R"(Pan コマンドの指定に誤りがあります)" },
+		{Code::panRangeError,					u8R"(Pan コマンドの値が範囲外です)" },
+		{Code::pitchBendError,					u8R"(PitchBend コマンドの指定に誤りがあります)" },
+		{Code::pitchBendRangeError,				u8R"(PitchBend コマンドの値が範囲外です)" },
+		{Code::controlChangeError,				u8R"(ControlChange コマンドの指定に誤りがあります)" },
+		{Code::controlChangeRangeError,			u8R"(ControlChange コマンドの値が範囲外です)" },
 		{Code::unknownError,					u8R"(解析出来ない書式です)"},
 		{Code::stdEexceptionError,				u8R"(std::excption エラーです)"},
 	};
@@ -56,11 +59,12 @@ class MmlCompiler::Inner
 public:
 	static const std::string sRegexLength;
 
-	static optional<boost::smatch> regexSearch(const std::string::const_iterator& iBegin, const std::string::const_iterator& iEnd, const boost::regex& re) {
-		// match_not_dot_newline:  . は改行以外にマッチ
-		// match_single_line	:  ^ は先頭行の行頭のみにマッチ
+	static std::optional<boost::smatch> regexSearch(const std::string::const_iterator& iBegin, const std::string::const_iterator& iEnd, const boost::regex& re) {
+		// match_not_dot_newline  : . は改行以外にマッチ
+		// match_single_line	  : ^ は先頭行の行頭のみにマッチ
+		// boost::match_continuous: 先頭から始まる部分シーケンスにのみマッチすることを指定する
 		boost::smatch m;
-		if (boost::regex_search(iBegin, iEnd, m, re, boost::match_not_dot_newline | boost::match_single_line)) {
+		if (boost::regex_search(iBegin, iEnd, m, re, boost::match_not_dot_newline | boost::match_single_line | boost::match_continuous)) {
 			return m;
 		}
 		return std::nullopt;
@@ -135,8 +139,13 @@ public:
 	}
 
 	// コメント解析
-	static optional<std::string::const_iterator> parseCommant(const std::string::const_iterator& iBegin, const std::string::const_iterator& iEnd) {
+	static std::optional<std::string::const_iterator> parseCommant(const std::string::const_iterator& iBegin, const std::string::const_iterator& iEnd) {
+#if 1
+		if (*iBegin != '/') return std::nullopt;	// 高速化のために最初の1文字だけでまずチェック
+		static const boost::regex re(R"(^((?<line>\/\/)|(?<range>\/\*)))");
+#else
 		static const boost::regex re(R"(^\s*((?<line>\/\/)|(?<range>\/\*)))");
+#endif
 		if (auto r = regexSearch(iBegin, iEnd, re)) {
 			const auto& re = [&] {
 				if (const auto& sm = (*r)["line"]; sm.matched) {	// 次行or終端 まで飛ばす
@@ -162,10 +171,10 @@ public:
 	static auto parseInt(const std::string::const_iterator& iBegin, const std::string::const_iterator& iEnd,bool sign) {
 		struct Result {
 			std::string::const_iterator		next;		// 次の位置
-			optional<bool>					sign;		// true:+ false:-
+			std::optional<bool>				sign;		// true:+ false:-
 			long long						value = 0;
 		};
-		optional<Result> result = Result();
+		std::optional<Result> result = Result();
 
 		auto const &re = [&]{
 			if(sign){
@@ -189,22 +198,22 @@ public:
 	// 関数解析
 	static auto parseFunction(const std::string::const_iterator& iBegin, const std::string::const_iterator& iEnd, const std::string& functionName) {
 		struct Result {
-			using PairIterator = pair<std::string::const_iterator, std::string::const_iterator>;
+			using PairIterator = std::pair<std::string::const_iterator, std::string::const_iterator>;
 			PairIterator						functionName;	// 関数名
 			std::string::const_iterator			next;			// 次の位置
 			std::map<std::string, PairIterator>	args;			// 引数リスト
 
-			optional<std::string> findArgString(const std::string name)const {
+			std::optional<std::string> findArgString(const std::string name)const {
 				if (auto i = args.find(name); i != args.end()) return std::string(i->second.first, i->second.second);
 				return std::nullopt;
 			}
 
 			auto findArgInt(const std::string name, bool sign)const {
 				struct Result {
-					optional<bool>	sign;		// true:+ false:-
-					long long		value = 0;
+					std::optional<bool>	sign;		// true:+ false:-
+					long long			value = 0;
 				};
-				optional<Result> result = Result();
+				std::optional<Result> result = Result();
 
 				if (const auto i = args.find(name); i != args.end()) {
 					if (const auto r = parseInt(i->second.first, i->second.second, sign)) {
@@ -218,7 +227,7 @@ public:
 				return decltype(result)();
 			}
 		};
-		optional<Result> result = Result();
+		std::optional<Result> result = Result();
 
 		std::string::const_iterator it;
 		if (auto r = regexSearch(iBegin, iEnd, boost::regex(string::format(R"(^\s*(?<name>%1%)\W)", functionName)))) {
@@ -339,7 +348,7 @@ public:
 
 	static std::string getErrorPostionString(const std::string::const_iterator& iBegin, const std::string::const_iterator& iEnd) {
 		// UTF8 文字列から先頭の１文字取得
-		static const auto getUtf8Char = [](const std::string::const_iterator& iBegin, const std::string::const_iterator& iEnd) -> optional<std::smatch> {
+		static const auto getUtf8Char = [](const std::string::const_iterator& iBegin, const std::string::const_iterator& iEnd) -> std::optional<std::smatch> {
 			static const std::regex re(u8R"([\x00-\x7f]|[\xc2-\xdf][\x80-\xbf]{1}|[\xe0-\xef][\x80-\xbf]{2}|[\xf0-\xf4][\x80-\xbf]{3})");
 			std::smatch m;
 			if (std::regex_search(iBegin, iEnd, m, re)) {
@@ -359,15 +368,15 @@ public:
 	}
 
 	struct Port {
-		size_t					position = 0;			// 現在の位置
-		size_t					defaultStep = 480;		// デフォルト音長(step)
-		int						octave = 4;				// 現在のオクターブ( -2 ～ 8 )
-		int						velocity = 100;			// 現在のベロシティ(0～127)
-		int						volume = 100;			// 現在のボリューム(0～127)
-		int						pan = 64;				// 現在のパン(0～127)
-		shared_ptr<EventNote>	beforeEvent;			// 直前の音符( ^の対象)
-		bool					noteUnmove = false;		// Noteで現在位置を進めないモード
-		MmlCompiler::Port		port;
+		size_t						position = 0;			// 現在の位置
+		size_t						defaultStep = 480;		// デフォルト音長(step)
+		int							octave = 4;				// 現在のオクターブ( -2 ～ 8 )
+		int							velocity = 100;			// 現在のベロシティ(0～127)
+		int							volume = 100;			// 現在のボリューム(0～127)
+		int							pan = 64;				// 現在のパン(0～127)
+		std::shared_ptr<EventNote>	beforeEvent;			// 直前の音符( ^の対象)
+		bool						noteUnmove = false;		// Noteで現在位置を進めないモード
+		MmlCompiler::Port			port;
 	};
 
 	struct State {
@@ -375,7 +384,7 @@ public:
 		std::string					currentPortName;
 
 		// v? ベロシティ
-		const optional<std::string::const_iterator> parseVelocity(const std::string::const_iterator& iBegin, const std::string::const_iterator& iEnd) {
+		const std::optional<std::string::const_iterator> parseVelocity(const std::string::const_iterator& iBegin, const std::string::const_iterator& iEnd) {
 			try {
 				static const boost::regex re(R"(^\s*(?<command>v)[^a-zA-Z])");
 				const auto r = Inner::regexSearch(iBegin, iEnd, re);
@@ -405,7 +414,7 @@ public:
 		};
 
 		// l?? デフォルト音長
-		const optional<std::string::const_iterator> parseDefaultLength(const std::string::const_iterator& iBegin, const std::string::const_iterator& iEnd) {
+		const std::optional<std::string::const_iterator> parseDefaultLength(const std::string::const_iterator& iBegin, const std::string::const_iterator& iEnd) {
 			try {
 				static const boost::regex re(R"(^\s*l\s*((\!?[0-9]+\.*)(\s*[\+\-]\!?[0-9]+\.*)*))");
 				const auto r = Inner::regexSearch(iBegin, iEnd, re);		// 数字以外があるなら
@@ -427,7 +436,7 @@ public:
 		};
 
 		// o?? オクターブ
-		const optional<std::string::const_iterator> parseOctave(const std::string::const_iterator& iBegin, const std::string::const_iterator& iEnd) {
+		const std::optional<std::string::const_iterator> parseOctave(const std::string::const_iterator& iBegin, const std::string::const_iterator& iEnd) {
 			try {
 				static const boost::regex re(R"(^\s*o\s*(?<value>\-?[0-9]+))");
 				const auto r = Inner::regexSearch(iBegin, iEnd, re);
@@ -453,7 +462,7 @@ public:
 		};
 
 		// t?? テンポ
-		const optional<std::string::const_iterator> parseTempo(const std::string::const_iterator& iBegin, const std::string::const_iterator& iEnd) {
+		const std::optional<std::string::const_iterator> parseTempo(const std::string::const_iterator& iBegin, const std::string::const_iterator& iEnd) {
 			try {
 				static const boost::regex re(R"(^\s*t\s*(?<value>\+?[0-9]+(\.[0-9]*)?([eE][\+-]?[0-9]+)?))");
 				const auto r = Inner::regexSearch(iBegin, iEnd, re);
@@ -464,7 +473,7 @@ public:
 					double tempo = boost::lexical_cast<double>(sm.str());
 
 					auto& port = mapPort[currentPortName];
-					auto e = make_shared<EventTempo>();
+					auto e = std::make_shared<EventTempo>();
 					e->position = port.position;
 					e->tempo = tempo;
 					port.port.eventList.insert(e);
@@ -480,7 +489,7 @@ public:
 		};
 
 		// @?? プログラムチェンジ
-		const optional<std::string::const_iterator> parseProgramChange(const std::string::const_iterator& iBegin, const std::string::const_iterator& iEnd) {
+		const std::optional<std::string::const_iterator> parseProgramChange(const std::string::const_iterator& iBegin, const std::string::const_iterator& iEnd) {
 			try {
 				static const boost::regex re(R"(^\s*@\s*(?<value>[0-9]+))");
 				const auto r = Inner::regexSearch(iBegin, iEnd, re);
@@ -491,7 +500,7 @@ public:
 					int programNo = boost::lexical_cast<int>(sm.str());
 
 					auto& port = mapPort[currentPortName];
-					auto e = make_shared<EventProgramChange>();
+					auto e = std::make_shared<EventProgramChange>();
 					e->position = port.position;
 					e->programNo = programNo;
 					port.port.eventList.insert(e);
@@ -507,7 +516,7 @@ public:
 		};
 
 		// r?? 休符
-		const optional<std::string::const_iterator> parseRest(const std::string::const_iterator& iBegin, const std::string::const_iterator& iEnd) {
+		const std::optional<std::string::const_iterator> parseRest(const std::string::const_iterator& iBegin, const std::string::const_iterator& iEnd) {
 			try {
 				static const boost::regex re(R"(^(?<rest>\s*r\s*))" + Inner::sRegexLength);
 				const auto r = Inner::regexSearch(iBegin, iEnd, re);
@@ -527,7 +536,7 @@ public:
 		};
 
 		// a～g?? 音符
-		const optional<std::string::const_iterator> parseNote(const std::string::const_iterator& iBegin, const std::string::const_iterator& iEnd) {
+		const std::optional<std::string::const_iterator> parseNote(const std::string::const_iterator& iBegin, const std::string::const_iterator& iEnd) {
 			try {
 				static const boost::regex re(R"(^\s*(?<note>[a-g][\+\-]?)\s*)" + Inner::sRegexLength);
 				const auto r = Inner::regexSearch(iBegin, iEnd, re);
@@ -536,7 +545,7 @@ public:
 				}
 				auto& port = mapPort[currentPortName];
 				auto step = Inner::parseLength((*r)["note"].second, (*r)[0].second, port.defaultStep);
-				auto e = make_shared<EventNote>();
+				auto e = std::make_shared<EventNote>();
 				e->position = port.position;
 				e->note = [&] {
 					static const std::map<std::string, int> noteTable{
@@ -572,7 +581,7 @@ public:
 		};
 
 		// < > オクターブUPDOWN
-		const optional<std::string::const_iterator> parseOctaveUpDown(const std::string::const_iterator& iBegin, const std::string::const_iterator& iEnd) {
+		const std::optional<std::string::const_iterator> parseOctaveUpDown(const std::string::const_iterator& iBegin, const std::string::const_iterator& iEnd) {
 			try {
 				static const boost::regex re(R"(^\s*([<>]))");
 				const auto r = Inner::regexSearch(iBegin, iEnd, re);
@@ -598,9 +607,14 @@ public:
 		};
 
 		// ^ tie (長さを付け足す)
-		const optional<std::string::const_iterator> parseTie(const std::string::const_iterator& iBegin, const std::string::const_iterator& iEnd) {
+		const std::optional<std::string::const_iterator> parseTie(const std::string::const_iterator& iBegin, const std::string::const_iterator& iEnd) {
 			try {
+#if 1
+				if (*iBegin != '^') return std::nullopt;	// 高速化のために最初の1文字だけでまずチェック
+				static const boost::regex re(R"(^(\^\s*))" + Inner::sRegexLength);
+#else
 				static const boost::regex re(R"(^(\s*\^\s*))" + Inner::sRegexLength);
+#endif
 				const auto r = Inner::regexSearch(iBegin, iEnd, re);
 				if (!r) {
 					return std::nullopt;
@@ -622,7 +636,7 @@ public:
 		};
 
 		// ' Noteで現在位置を進めるか否かモード
-		const optional<std::string::const_iterator> parseNoteUnmove(const std::string::const_iterator& iBegin, const std::string::const_iterator& iEnd) {
+		const std::optional<std::string::const_iterator> parseNoteUnmove(const std::string::const_iterator& iBegin, const std::string::const_iterator& iEnd) {
 			try {
 				static const boost::regex re(R"(^\s*('))");
 				const auto r = Inner::regexSearch(iBegin, iEnd, re);
@@ -665,12 +679,35 @@ MmlCompiler::Result MmlCompiler::compile(const std::string& mml) {
 	try {
 		while (true) {
 
-			if (auto r = Inner::parseCommant(it, mml.cend())) {	// コメント
+			// 先頭の空白(改行タブ等含む)を飛ばす
+			it = std::find_if(it, mml.cend(), [](const auto& ch) {return !std::isspace(ch); });
+
+			// 完了
+			if (it == mml.cend()) break;
+
+			if (auto r = Inner::parseCommant(it, mml.cend())) {						// コメント
 				it = *r;
 				continue;
 			}
 
-			if (auto r = Inner::parseFunction(it, mml.cend(), "createPort")) {		// createPort
+			if (auto r = state.parseTie(it, mml.cend())) {							// ^ tie (長さを付け足す)
+				it = (*r);
+				continue;
+			}
+			if (auto r = state.parseOctaveUpDown(it, mml.cend())) {					// < > オクターブUPDOWN
+				it = (*r);
+				continue;
+			}
+			if (auto r = state.parseNoteUnmove(it, mml.cend())) {					// ' noteで位置更新するか否かモード
+				it = (*r);
+				continue;
+			}
+			if (auto r = state.parseProgramChange(it, mml.cend())) {				// @? プログラムチェンジ
+				it = (*r);
+				continue;
+			}
+
+			if (auto r = Inner::parseFunction(it, mml.cend(), "createPort|CreatePort")) {		// CreatePort
 				const auto name = (*r).findArgString("name").value_or("");
 				if (name.empty()) {
 					throw Exception(Exception::Code::createPortPortNameError, it, mml.cend());
@@ -690,7 +727,7 @@ MmlCompiler::Result MmlCompiler::compile(const std::string& mml) {
 				continue;
 			}
 
-			if (auto r = Inner::parseFunction(it, mml.cend(), "port")) {			// port
+			if (auto r = Inner::parseFunction(it, mml.cend(), "port|Port")) {			// Port
 				const auto name = (*r).findArgString("0").value_or("");
 				if (name.empty()) {
 					throw Exception(Exception::Code::portNameError, it, mml.cend());
@@ -703,7 +740,7 @@ MmlCompiler::Result MmlCompiler::compile(const std::string& mml) {
 				continue;
 			}
 
-			if (auto r = Inner::parseFunction(it, mml.cend(), "volume|V")) {		// volume|V
+			if (auto r = Inner::parseFunction(it, mml.cend(), "volume|Volume|V")) {		// Volume
 				const auto v = r->findArgInt("0", true);
 				if (!v) {
 					throw Exception(Exception::Code::volumeError, it, mml.cend());
@@ -728,7 +765,7 @@ MmlCompiler::Result MmlCompiler::compile(const std::string& mml) {
 				continue;
 			}
 
-			if (auto r = Inner::parseFunction(it, mml.cend(), "pan|panpot")) {		// pan|panpot
+			if (auto r = Inner::parseFunction(it, mml.cend(), "pan|Pan")) {		// Pan
 				const auto v = r->findArgInt("0", true);
 				if (!v) {
 					throw Exception(Exception::Code::panError, it, mml.cend());
@@ -736,12 +773,12 @@ MmlCompiler::Result MmlCompiler::compile(const std::string& mml) {
 				auto& port = state.mapPort[state.currentPortName];
 				if (v->sign) {		// 符号があるなら相対指定
 					auto n = port.pan + v->value;
-					port.pan = static_cast<decltype(port.volume)>((std::min)((std::max)(n, 0LL), 127LL));
+					port.pan = static_cast<decltype(port.pan)>((std::min)((std::max)(n, 0LL), 127LL));
 				} else {
 					if (v->value < 0 || v->value > 127) {
 						throw Exception(Exception::Code::panRangeError, it, mml.cend());
 					}
-					port.pan = static_cast<decltype(port.volume)>(v->value);
+					port.pan = static_cast<decltype(port.pan)>(v->value);
 				}
 
 				auto e = make_shared<EventPan>();
@@ -753,6 +790,59 @@ MmlCompiler::Result MmlCompiler::compile(const std::string& mml) {
 				continue;
 			}
 
+			if (auto r = Inner::parseFunction(it, mml.cend(), "pitchBend|PitchBend")) {		// PitchBend
+				const auto v = r->findArgInt("0", true);
+				if (!v) {
+					throw Exception(Exception::Code::pitchBendError, it, mml.cend());
+				}
+				auto& port = state.mapPort[state.currentPortName];
+				if (v->value < -8192 || v->value > 8191) {
+					throw Exception(Exception::Code::pitchBendRangeError, it, mml.cend());
+				}
+				auto e = make_shared<EventPitchBend>();
+				e->position = port.position;
+				e->pitchBend = static_cast<decltype(e->pitchBend)>(v->value);
+				port.port.eventList.insert(e);
+
+				it = r->next;
+				continue;
+			}
+
+			if (auto r = Inner::parseFunction(it, mml.cend(), "controlChange|ControlChange|CC")) {	// ControlChange
+				const auto no = [&] {
+					if (auto n = r->findArgInt("0", false)) return n;
+					return r->findArgInt("no", false);
+				}();
+				const auto val = [&] {
+					if (auto n = r->findArgInt("1", false)) return n;
+					return r->findArgInt("value", false);
+				}();
+				if (!no || !val) {
+					throw Exception(Exception::Code::controlChangeError, it, mml.cend());
+				}
+				if (no->value < 0 || no->value > 127 || val->value < 0 || val->value > 127) {
+					throw Exception(Exception::Code::controlChangeRangeError, it, mml.cend());
+				}
+				auto& port = state.mapPort[state.currentPortName];
+
+				auto e = make_shared<EventControlChange>();
+				e->position = port.position;
+				e->no = static_cast<decltype(e->no)>(no->value);
+				e->value = static_cast<decltype(e->no)>(val->value);
+				port.port.eventList.insert(e);
+
+				it = r->next;
+				continue;
+			}
+
+			if (auto r = state.parseRest(it, mml.cend())) {							// r 休符
+				it = (*r);
+				continue;
+			}
+			if (auto r = state.parseNote(it, mml.cend())) {							// a～g 音符
+				it = (*r);
+				continue;
+			}
 			if (auto r = state.parseVelocity(it, mml.cend())) {						// v? ベロシティ
 				it = (*r);
 				continue;
@@ -769,31 +859,10 @@ MmlCompiler::Result MmlCompiler::compile(const std::string& mml) {
 				it = (*r);
 				continue;
 			}
-			if (auto r = state.parseProgramChange(it, mml.cend())) {				// @? プログラムチェンジ
-				it = (*r);
-				continue;
-			}
-			if (auto r = state.parseRest(it, mml.cend())) {							// r 休符
-				it = (*r);
-				continue;
-			}
-			if (auto r = state.parseNote(it, mml.cend())) {							// a～g 音符
-				it = (*r);
-				continue;
-			}
-			if (auto r = state.parseOctaveUpDown(it, mml.cend())) {					// < > オクターブUPDOWN
-				it = (*r);
-				continue;
-			}
-			if (auto r = state.parseTie(it, mml.cend())) {							// ^ tie (長さを付け足す)
-				it = (*r);
-				continue;
-			}
-			if (auto r = state.parseNoteUnmove(it, mml.cend())) {					// ' noteで位置更新するか否かモード
-				it = (*r);
-				continue;
-			}
 
+#if 1
+			throw Exception(Exception::Code::unknownError, it, mml.cend());
+#else
 			static const boost::regex re(R"(^\s*(\S+))");
 			boost::smatch match;
 			if (boost::regex_search(it, mml.cend(), match, re, boost::match_not_dot_newline | boost::match_single_line)) {
@@ -804,6 +873,7 @@ MmlCompiler::Result MmlCompiler::compile(const std::string& mml) {
 			}
 
 			break;		// 完了
+#endif
 		}
 
 		Result result;

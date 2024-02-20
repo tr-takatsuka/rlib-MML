@@ -193,7 +193,7 @@ Smf Smf::fromStream(std::istream& is)
 			}
 			case EventControlChange::statusByte: {
 				const std::array<uint8_t, 2> a = Inner::read<decltype(a)>(is);
-				track.events.emplace(currentPosition, std::make_shared<EventControlChange>(status & 0xf, static_cast<EventControlChange::Type>(a[0] & 0x7f), a[1] & 0x7f));
+				track.events.emplace(currentPosition, std::make_shared<EventControlChange>(status & 0xf, a[0] & 0x7f, a[1] & 0x7f));
 				break;
 			}
 			case EventProgramChange::statusByte: {
@@ -201,10 +201,10 @@ Smf Smf::fromStream(std::istream& is)
 				track.events.emplace(currentPosition, std::make_shared<EventProgramChange>(status & 0xf, n & 0x7f));
 				break;
 			}
-			case EventPitchWheel::statusByte: {
+			case EventPitchBend::statusByte: {
 				const std::array<uint8_t, 2> a = Inner::read<decltype(a)>(is);
 				const auto n = ((a[0] & 0x7f) + (a[1] & 0x7f) * 0x80) - 8192;
-				track.events.emplace(currentPosition, std::make_shared<EventPitchWheel>(status & 0xf, n));
+				track.events.emplace(currentPosition, std::make_shared<EventPitchBend>(status & 0xf, n));
 				break;
 			}
 			case EventChannelPressure::statusByte: {

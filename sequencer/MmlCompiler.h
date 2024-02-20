@@ -25,6 +25,13 @@ namespace rlib::sequencer {
 		struct EventPan : public Event {
 			uint8_t	pan = 0;			// パン値 0～127
 		};
+		struct EventPitchBend : public Event {
+			int16_t	pitchBend = 0;
+		};
+		struct EventControlChange : public Event {
+			uint8_t	no = 0;				// コントロールNo 0～127
+			uint8_t	value = 0;			// 値 0～127
+		};
 
 		struct EventNote : public Event {
 			uint8_t	note = 0;			// ノート番号 0～127
@@ -68,14 +75,18 @@ namespace rlib::sequencer {
 				octaveUpDownCommandError,	// オクターブアップダウン（ < , > コマンド）に誤りがあります
 				octaveUpDownRangeCommandError,	// オクターブ値が範囲外です
 				tieCommandError,			// タイ（^ コマンド）に誤りがあります
-				createPortPortNameError,	// createPort コマンドのポート名指定に誤りがあります
-				createPortDuplicateError,	// createPort コマンドでポート名が重複しています
-				createPortChannelError,		// createPort コマンドのチャンネル指定に誤りがあります
-				portNameError,				// port コマンドのポート名指定に誤りがあります
-				volumeError,				// volume コマンドの指定に誤りがあります
-				volumeRangeError,			// volume コマンドの値が範囲外です
-				panError	,				// pan コマンドの指定に誤りがあります
-				panRangeError,				// pan コマンドの値が範囲外です
+				createPortPortNameError,	// CreatePort コマンドのポート名指定に誤りがあります
+				createPortDuplicateError,	// CreatePort コマンドでポート名が重複しています
+				createPortChannelError,		// CreatePort コマンドのチャンネル指定に誤りがあります
+				portNameError,				// Port コマンドのポート名指定に誤りがあります
+				volumeError,				// Volume コマンドの指定に誤りがあります
+				volumeRangeError,			// Volume コマンドの値が範囲外です
+				panError	,				// Pan コマンドの指定に誤りがあります
+				panRangeError,				// Pan コマンドの値が範囲外です
+				pitchBendError,				// PitchBend コマンドの指定に誤りがあります
+				pitchBendRangeError,		// PitchBend コマンドの値が範囲外です
+				controlChangeError,			// ControlChange コマンドの指定に誤りがあります
+				controlChangeRangeError,	// ControlChange コマンドの値が範囲外です
 				unknownError,				// 解析出来ない書式です
 				stdEexceptionError,			// std::excption エラーです
 			};
