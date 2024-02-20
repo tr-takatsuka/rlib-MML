@@ -129,15 +129,20 @@ namespace rlib::midi {
 	struct EventControlChange : public EventCh {
 		static constexpr uint8_t statusByte = 0xb0;
 		enum class Type {
+			bankselectMSB = 0,
 			modulation = 1,
 			volume = 7,
 			pan = 10,
 			expression = 11,
+			bankselectLSB = 32,
 		};
-		const Type		type = Type::modulation;
+		const Type		type = static_cast<Type>(0);
 		const uint8_t	value = 0;
 		EventControlChange(uint8_t channel, Type type_, uint8_t value_)
 			:EventCh(channel), type(type_), value(value_)
+		{}
+		EventControlChange(uint8_t channel, uint8_t type_, uint8_t value_)
+			:EventCh(channel), type(static_cast<Type>(type_)), value(value_)
 		{}
 		virtual std::vector<uint8_t> midiMessage() const {
 			return std::vector<uint8_t>{static_cast<uint8_t>(statusByte | (channel & 0xf)), static_cast<uint8_t>(static_cast<uint8_t>(type) & 0x7f), static_cast<uint8_t>(value & 0x7f)};
@@ -155,14 +160,14 @@ namespace rlib::midi {
 		}
 	};
 
-	struct EventPitchWheel : public EventCh {
+	struct EventPitchBend : public EventCh {
 		static constexpr uint8_t statusByte = 0xe0;
-		const int16_t	pitchWheel;			// -8192 Å` 8191
-		EventPitchWheel(uint8_t channel, int16_t pitchWheel_)
-			:EventCh(channel), pitchWheel(pitchWheel_)
+		const int16_t	pitchBend;			// -8192 Å` 8191
+		EventPitchBend(uint8_t channel, int16_t pitchBend_)
+			:EventCh(channel), pitchBend(pitchBend_)
 		{}
 		virtual std::vector<uint8_t> midiMessage() const {
-			const int n = pitchWheel + 8192;
+			const int n = pitchBend + 8192;
 			return std::vector<uint8_t>{static_cast<uint8_t>(statusByte | (channel & 0xf)), static_cast<uint8_t>(n & 0x7f), static_cast<uint8_t>(n / 0x80 & 0x7f)};
 		}
 	};

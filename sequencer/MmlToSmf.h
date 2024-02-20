@@ -30,6 +30,14 @@ namespace rlib::sequencer {
 						auto& e = static_cast<const MmlCompiler::EventPan&>(event);
 						track.events.insert(Smf::Event(e.position, std::make_shared<midi::EventControlChange>(port.channel, midi::EventControlChange::Type::pan, e.pan)));
 					}},
+					{typeid(MmlCompiler::EventPitchBend), [](Smf::Track& track,const MmlCompiler::Port& port,const MmlCompiler::Event& event) {
+						auto& e = static_cast<const MmlCompiler::EventPitchBend&>(event);
+						track.events.insert(Smf::Event(e.position, std::make_shared<midi::EventPitchBend>(port.channel, e.pitchBend)));
+					}},
+					{typeid(MmlCompiler::EventControlChange), [](Smf::Track& track,const MmlCompiler::Port& port,const MmlCompiler::Event& event) {
+						auto& e = static_cast<const MmlCompiler::EventControlChange&>(event);
+						track.events.insert(Smf::Event(e.position, std::make_shared<midi::EventControlChange>(port.channel, e.no, e.value)));
+					}},
 					{typeid(MmlCompiler::EventTempo), [](Smf::Track& track,const MmlCompiler::Port& port,const MmlCompiler::Event& event) {
 						auto& e = static_cast<const MmlCompiler::EventTempo&>(event);
 						track.events.insert(Smf::Event(e.position, std::make_shared<midi::EventMeta>(midi::EventMeta::createTempo(e.tempo))));

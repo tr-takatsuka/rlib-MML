@@ -35,7 +35,6 @@ TARGET_LINK_LIBRARIES(mmltosmf boost_regex)
 
 add_executable (smftomml
 	"./smftomml.cpp"
-	"./sequencer/MmlCompiler.cpp"
 	"./sequencer/Smf.cpp"
 )
 

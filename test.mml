@@ -6,8 +6,8 @@ createPort(name:PianoB,channel:1)
 createPort(name:PianoC,channel:2)
 
 
-port(PianoA)	l8  o3 t100 @1
-port(PianoB)	l8  o3
+port(PianoA)	l8  o3 t100 @1 PitchBend(0) Pan(64) ControlChange(10,64)
+port(PianoB)	l8  o3 
 port(PianoC)	l8  o2 @1
 port(PianoA)	rg<cd
 port(PianoB)	r^^^

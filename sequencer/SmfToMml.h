@@ -3,7 +3,6 @@
 #include "MidiEvent.h"
 #include "Smf.h"
 #include "TempoList.h"
-//#include "MmlCompiler.h"
 
 #include "../stringformat/StringFormat.h"
 
@@ -57,8 +56,8 @@ namespace rlib::sequencer {
 					bool	noteUnmove = false;				// 音符で位置を更新しないモード
 				}state;
 
-				result += string::format(u8"\ncreatePort(name:tr%dch%02d, channel:%d)", trackNo, channel + 1, channel + 1);
-				result += string::format(u8"\nport(tr%dch%02d)", trackNo, channel + 1);
+				result += string::format(u8"\nCreatePort(name:tr%dch%02d, channel:%d)", trackNo, channel + 1, channel + 1);
+				result += string::format(u8"\nPort(tr%dch%02d)", trackNo, channel + 1);
 				result += string::format(u8" l8 ");
 
 				// 音長 文字列取得
@@ -175,9 +174,10 @@ namespace rlib::sequencer {
 							result += string::format(u8"V(%s)", static_cast<int>(e.value));
 							break;
 						case midi::EventControlChange::Type::pan:
-							result += string::format(u8"pan(%s)", static_cast<int>(e.value));
+							result += string::format(u8"Pan(%s)", static_cast<int>(e.value));
 							break;
 						default:
+							result += string::format(u8"CC(%s,%s)", static_cast<int>(e.type), static_cast<int>(e.value));
 							break;
 						}
 					}},
@@ -185,6 +185,11 @@ namespace rlib::sequencer {
 					{typeid(midi::EventProgramChange), [&](const ItEvents& it) {
 						auto& e = static_cast<const midi::EventProgramChange&>(*it->event);
 						result += string::format(u8"@%d", static_cast<int>(e.programNo));
+					}},
+
+					{typeid(midi::EventPitchBend), [&](const ItEvents& it) {
+						auto& e = static_cast<const midi::EventPitchBend&>(*it->event);
+						result += string::format(u8"PitchBend(%d)", static_cast<int>(e.pitchBend));
 					}},
 
 					{typeid(midi::EventMeta), [&](const ItEvents& it) {
@@ -212,7 +217,11 @@ namespace rlib::sequencer {
 					}// else assert(false);
 				}
 
+
 			}
+
+
+
 
 		}
 
