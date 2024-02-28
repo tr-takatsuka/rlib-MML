@@ -226,7 +226,8 @@ Smf Smf::fromStream(std::istream& is)
 							break;
 						}
 						if ((n & 0x80) != 0) {
-							throw std::runtime_error("exclusive data error");	// EOX(0xf7)が無い！！
+							// あるべきハズのEOX(0xf7)が無い(が、エラーにはせず続行)
+							std::clog << "[warning] exclusive data error. EOX(0xf7) is missing." << std::endl;
 							break;
 						}
 						data.push_back(n);
