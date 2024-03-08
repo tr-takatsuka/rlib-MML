@@ -116,7 +116,7 @@ namespace rlib {
 		}
 		// 1ƒJƒEƒ“ƒg‚ ‚½‚è‚ÌŠÔ(•b)æ“¾
 		static T getSecPerCount(T tempo) {
-			return 60.0f / (tempo * timeBase);
+			return static_cast<T>(60.0) / (tempo * timeBase);
 		}
 	private:
 

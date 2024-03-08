@@ -4,39 +4,62 @@ namespace rlib::sequencer {
 
 	class MmlCompiler
 	{
-		static constexpr int timeBase = 480;			// 分解能(4分音符あたりのカウント)
 		class Inner;
 	public:
+		static constexpr int timeBase = 480;			// 分解能(4分音符あたりのカウント)
+
 		struct Event {
 			size_t	position = 0;
 			virtual ~Event() {}
+			virtual std::shared_ptr<Event> clone()const = 0;
 		};
 
 		struct EventTempo : public Event {
 			double	tempo = 0.0;
+			virtual std::shared_ptr<Event> clone()const {
+				return std::make_shared<EventTempo>(*this);
+			}
 		};
 
 		struct EventProgramChange : public Event {
 			uint8_t	programNo = 0;
+			virtual std::shared_ptr<Event> clone()const {
+				return std::make_shared<EventProgramChange>(*this);
+			}
 		};
 		struct EventVolume : public Event {
 			uint8_t	volume = 0;			// 音量値 0～127
+			virtual std::shared_ptr<Event> clone()const {
+				return std::make_shared<EventVolume>(*this);
+			}
 		};
 		struct EventPan : public Event {
 			uint8_t	pan = 0;			// パン値 0～127
+			virtual std::shared_ptr<Event> clone()const {
+				return std::make_shared<EventPan>(*this);
+			}
 		};
 		struct EventPitchBend : public Event {
 			int16_t	pitchBend = 0;
+			virtual std::shared_ptr<Event> clone()const {
+				return std::make_shared<EventPitchBend>(*this);
+			}
 		};
 		struct EventControlChange : public Event {
 			uint8_t	no = 0;				// コントロールNo 0～127
 			uint8_t	value = 0;			// 値 0～127
+			virtual std::shared_ptr<Event> clone()const {
+				return std::make_shared<EventControlChange>(*this);
+			}
 		};
 
 		struct EventNote : public Event {
 			uint8_t	note = 0;			// ノート番号 0～127
 			size_t	length = 0;			// 音長(ステップ数)
 			uint8_t	velocity = 0;		// ベロシティ(0～127)
+			virtual std::shared_ptr<Event> clone()const {
+				return std::make_shared<EventNote>(*this);
+			}
 		};
 
 		struct LessEvent {
@@ -57,38 +80,45 @@ namespace rlib::sequencer {
 		// parse error
 		struct Exception : public std::runtime_error {
 			enum class Code {
-				lengthError = 1,			// 音長の指定に誤りがあります
-				lengthMinusError,			// 音長を負値にはできません
-				commentError,				// コメント指定に誤りがあります
-				argumentError,				// 関数の引数指定に誤りがあります
-				functionCallError,			// 関数呼び出しに誤りがあります
-				unknownNumberError,			// 数値の指定に誤りがあります
-				vCommandError,				// ベロシティ指定（v コマンド）に誤りがあります
-				vCommandRangeError,			// ベロシティ指定（v コマンド）の値が範囲外です
-				lCommandError,				// デフォルト音長指定（l コマンド）に誤りがあります
-				oCommandError,				// オクターブ指定（o コマンド）に誤りがあります
-				oCommandRangeError,			// オクターブ指定（o コマンド）の値が範囲外です
-				tCommandRangeError,			// テンポ指定（t コマンド）に誤りがあります
-				programchangeCommandError,	// 音色指定（@ コマンド）に誤りがあります
-				rCommandRangeError,			// 休符指定（r コマンド）に誤りがあります
-				noteCommandRangeError,		// 音符指定（a～g コマンド）に誤りがあります
-				octaveUpDownCommandError,	// オクターブアップダウン（ < , > コマンド）に誤りがあります
+				lengthError = 1,				// 音長の指定に誤りがあります
+				lengthMinusError,				// 音長を負値にはできません
+				commentError,					// コメント指定に誤りがあります
+				argumentError,					// 関数の引数指定に誤りがあります
+				functionCallError,				// 関数呼び出しに誤りがあります
+				unknownNumberError,				// 数値の指定に誤りがあります
+				vCommandError,					// ベロシティ指定（v コマンド）に誤りがあります
+				vCommandRangeError,				// ベロシティ指定（v コマンド）の値が範囲外です
+				lCommandError,					// デフォルト音長指定（l コマンド）に誤りがあります
+				oCommandError,					// オクターブ指定（o コマンド）に誤りがあります
+				oCommandRangeError,				// オクターブ指定（o コマンド）の値が範囲外です
+				tCommandRangeError,				// テンポ指定（t コマンド）に誤りがあります
+				programchangeCommandError,		// 音色指定（@ コマンド）に誤りがあります
+				rCommandRangeError,				// 休符指定（r コマンド）に誤りがあります
+				noteCommandRangeError,			// 音符指定（a～g コマンド）に誤りがあります
+				octaveUpDownCommandError,		// オクターブアップダウン（ < , > コマンド）に誤りがあります
 				octaveUpDownRangeCommandError,	// オクターブ値が範囲外です
-				tieCommandError,			// タイ（^ コマンド）に誤りがあります
-				createPortPortNameError,	// CreatePort コマンドのポート名指定に誤りがあります
-				createPortDuplicateError,	// CreatePort コマンドでポート名が重複しています
-				createPortChannelError,		// CreatePort コマンドのチャンネル指定に誤りがあります
-				portNameError,				// Port コマンドのポート名指定に誤りがあります
-				volumeError,				// Volume コマンドの指定に誤りがあります
-				volumeRangeError,			// Volume コマンドの値が範囲外です
-				panError	,				// Pan コマンドの指定に誤りがあります
-				panRangeError,				// Pan コマンドの値が範囲外です
-				pitchBendError,				// PitchBend コマンドの指定に誤りがあります
-				pitchBendRangeError,		// PitchBend コマンドの値が範囲外です
-				controlChangeError,			// ControlChange コマンドの指定に誤りがあります
-				controlChangeRangeError,	// ControlChange コマンドの値が範囲外です
-				unknownError,				// 解析出来ない書式です
-				stdEexceptionError,			// std::excption エラーです
+				tieCommandError,				// タイ（^ コマンド）に誤りがあります
+				createPortError,				// CreatePort コマンドに誤りがあります
+				createPortPortNameError,		// CreatePort コマンドのポート名指定に誤りがあります
+				createPortDuplicateError,		// CreatePort コマンドでポート名が重複しています
+				createPortChannelError,			// CreatePort コマンドのチャンネル指定に誤りがあります
+				portError,						// Port コマンドに誤りがあります
+				portNameError,					// Port コマンドのポート名指定に誤りがあります
+				volumeError,					// Volume コマンドの指定に誤りがあります
+				volumeRangeError,				// Volume コマンドの値が範囲外です
+				panError	,					// Pan コマンドの指定に誤りがあります
+				panRangeError,					// Pan コマンドの値が範囲外です
+				pitchBendError,					// PitchBend コマンドの指定に誤りがあります
+				pitchBendRangeError,			// PitchBend コマンドの値が範囲外です
+				controlChangeError,				// ControlChange コマンドの指定に誤りがあります
+				controlChangeRangeError,		// ControlChange コマンドの値が範囲外です
+				createSequenceError,			// CreateSequence コマンドに誤りがあります
+				createSequenceDuplicateError,	// CreateSequence コマンドで名前が重複しています
+				createSequenceNameError,		// CreateSequence コマンドの名前指定に誤りがあります
+				sequenceError,					// Sequence コマンドに誤りがあります
+				sequenceNameError,				// Sequence コマンドの名前指定に誤りがあります
+				unknownError,					// 解析出来ない書式です
+				stdEexceptionError,				// std::excption エラーです
 			};
 			const Code							code;
 			const std::string::const_iterator	it;
@@ -102,6 +132,7 @@ namespace rlib::sequencer {
 
 		static Result compile(const std::string& mml);
 
+		static void unitTest();
 	};
 
 }
