@@ -40,6 +40,7 @@ We have confirmed the operation in the following environment.
 |v[velocity]|Specifies the velocity (the strength with which you hit the keyboard on a piano). Values ​​are 0-127.| "v123 cde"  → CDE at velocity 123.|
 |'[switch chord mode]|Switches to a mode where the current position is not advanced by notes. Use rests to advance the current position. Use when two or more notes are pronounced simultaneously, e.g. chords.| "l8 'cegr dfar'  "<br>→ 8th note C major chord and D miner chords.|
 
+
 ### length
 - This is how to specify the length of the note.
 
@@ -56,8 +57,22 @@ We have confirmed the operation in the following environment.
 | ---- | ---- | ---- |
 |createPort(<br>&emsp;name:[port name],<br>&emsp;channel:[channel number],<br>)| Define (declare) the port<br>Channel numbers are 1-16.|"createPort(name:Piano, channel:3)" <br>→ Declare the port of MIDI channel 3 with the name "Piano".|
 |port([port name])| It is port switching|"port(Piano) cde"  → CDE at Port "Piano"|
-|V([volume value])<br>volume([volume value])|The volume. Values ​​are 0-127.| "V(120) cde"  → CDE at Volume 120.|
-|pan([pan value])<br>panpot([pan value])|It is pan (panpot).<br>Values ​​range from 0 (far left) to 127 (far right), with 64 in the center.| "pan(0) cde"  → CDE at Pan 0 (far left).|
+|V([volume value])<br>ailias: volume|The volume. Values ​​are 0-127.| "V(120) cde"  → CDE at Volume 120.|
+|pan([pan value])<br>ailias: panpot|It is pan (panpot).<br>Values ​​range from 0 (far left) to 127 (far right), with 64 in the center.| "pan(0) cde"  → CDE at Pan 0 (far left).|
+|PitchBend([value])| Pitch bend.<br>Values range from -8192 (two notes down) to 8191 (two notes up), with the centre at 0.| "PitchBend(-4096) cde Pan(0) cde"<br>→ CDE lowered by a semitone and normal CDE.|
+|CC([contorl change no],[value])<br>ailias: ContorlChange| Contorl change.<br>The first argument is the control number and the first argument is the value| "CC(0,10)CC(32,130)@2" Bank-selected programme change.|
+|CreateSequence(<br>&emsp;name:[sequence name],<br>&emsp;mml:[MML],<br>)|Defined Sequence(sub Sequence).<br>Define songs (MML) as parts and call them in subsequent MMLs.| // Defined rhythm pattern<br/>CreateSequence(name:drum, mml:"<br/>&emsp;CreatePort(name:kick, channel:10) l8 o1 c^^c ^c^^<br/>&emsp;CreatePort(name:snare, channel:10) l8 o1 ^^d^ ^^d^<br/>")|
+|Seq([sequence name],length:[length(optional)])<br>ailias Sequence|Calls a predefined sequence (sub-sequence).| // Defined rhythmic pattern is repeated three times.<br>// Only half-note minutes are used for the third round of the sequence.<br/>Seq(drum) Seq(drum) Seq(drum,length:2)|
+
+## string
+
+Where a string is specified, the following formats can be used.
+
+|  notation  |  description  |example|
+| ---- | ---- | ---- |
+| ○○○ | This designation is possible in alphanumeric characters only.| abcdefg  |
+| "○○○" | " to " is a string. You can also use spaces and non-symbols.　| "drum part"
+| R"\*\*(○○○)\*\*" | It can also be used for whitespace and symbols.<br>If you are defining a sequence within a sequence, you can use ** as a unique string to deal with cases where you have a string definition within a string definition　| R"(drum)"<br><br> R"ch1( mml:R"(drum)" )ch1"
 
 ## comments
 
