@@ -2,19 +2,20 @@
 
 namespace rlib {
 
-	class TempoList {
+	template <typename T = double> class TempoListT {
 	public:
+		using Type = T;
 		enum {
 			timeBase = 480,			// 分解能(4分音符あたりのカウント)
 		};
 		struct Element {
 			uint64_t	position = 0;	// 位置
-			double		tempo = 120.0;	// テンポ
-			double		time = 0.0;		// 時間(秒)
+			T			tempo = 120.0;	// テンポ
+			T			time = 0.0;		// 時間(秒)
 
 			Element()
 			{}
-			Element(uint64_t position_, double tempo_)
+			Element(uint64_t position_, T tempo_)
 				:position(position_)
 				, tempo(tempo_)
 			{}
@@ -38,19 +39,19 @@ namespace rlib {
 		};
 		typedef std::vector<Element> List;
 
-		bool operator==(const TempoList& s)const {
+		bool operator==(const TempoListT& s)const {
 			return m_list == s.m_list;
 		}
-		bool operator!=(const TempoList& s)const {
+		bool operator!=(const TempoListT& s)const {
 			return !(*this == s);
 		}
 
-		TempoList() {
+		TempoListT() {
 		}
-		TempoList(const TempoList& s)
+		TempoListT(const TempoListT& s)
 			:m_list(s.m_list)
 		{}
-		TempoList(TempoList&& s)
+		TempoListT(TempoListT&& s)
 			:m_list(std::move(s.m_list))
 		{}
 
@@ -59,7 +60,7 @@ namespace rlib {
 		}
 
 		// Tempo 挿入
-		void insert(uint64_t position, double tempo) {
+		void insert(uint64_t position, T tempo) {
 			const auto i = m_list.insert(												// m_listPos に追加
 				std::upper_bound(m_list.begin(), m_list.end(), position, LessPosition()),	// 対象の値を超える最初
 				Element(position, tempo));
@@ -67,7 +68,7 @@ namespace rlib {
 		}
 
 		// 削除
-		void erase(const List::const_iterator& i) {
+		void erase(const typename List::const_iterator& i) {
 			const size_t index = i - m_list.begin();
 			m_list.erase(i);
 			updateTime(m_list.begin() + index);	// time 更新
@@ -84,7 +85,7 @@ namespace rlib {
 		//}
 
 		// 時間(秒)から位置(position)とテンポを取得
-		std::pair<uint64_t, double> getPositionAndTempo(double time)const {		// return pair<step,テンポ>
+		std::pair<uint64_t, T> getPositionAndTempo(T time)const {		// return pair<step,テンポ>
 			const auto i = std::upper_bound(m_list.begin(), m_list.end(), time, LessTime());
 			Element tempoDefault;
 			const Element& t = i == m_list.begin() ? tempoDefault : *(i - 1);
@@ -94,14 +95,14 @@ namespace rlib {
 		}
 
 		// 位置(count)から時間(秒)を取得
-		double getTime(uint64_t position)const {
+		T getTime(uint64_t position)const {
 			const auto i = getUpperBound(position);
 			Element tempoDefault;
 			const Element& t = i == m_list.begin() ? tempoDefault : *(i - 1);
 			return t.time + ((position - t.position) * getSecPerCount(t.tempo));
 		}
 
-		std::pair<List::const_iterator, List::const_iterator> getEqualRange(uint64_t position)const {
+		std::pair<typename List::const_iterator, typename List::const_iterator> getEqualRange(uint64_t position)const {
 			return std::make_pair(getLowerBound(position), getUpperBound(position));
 		}
 
@@ -110,26 +111,26 @@ namespace rlib {
 		}
 
 		// 1秒あたりのカウント取得
-		static double getCountPerSec(double tempo) {
+		static T getCountPerSec(T tempo) {
 			return tempo * timeBase / 60.0;
 		}
 		// 1カウントあたりの時間(秒)取得
-		static double getSecPerCount(double tempo) {
-			return 60.0 / (tempo * timeBase);
+		static T getSecPerCount(T tempo) {
+			return static_cast<T>(60.0) / (tempo * timeBase);
 		}
 	private:
 
 		// 位置取得 (lower_bound:対象の値以上の最初を指す)
-		List::const_iterator getLowerBound(uint64_t position)const {
+		typename List::const_iterator getLowerBound(uint64_t position)const {
 			return std::lower_bound(m_list.begin(), m_list.end(), position, LessPosition());
 		}
 
 		// 位置取得 (upper_bound:対象の値を超える最初を指す)
-		List::const_iterator getUpperBound(uint64_t position)const {
+		typename List::const_iterator getUpperBound(uint64_t position)const {
 			return std::upper_bound(m_list.begin(), m_list.end(), position, LessPosition());
 		}
 
-		void updateTime(List::iterator i) {	// time 更新
+		void updateTime(typename List::iterator i) {	// time 更新
 			Element tempoDefault;
 			Element* pBefore = i == m_list.begin() ? &tempoDefault : &*(i - 1);
 			for (; i != m_list.end(); i++) {
@@ -140,5 +141,8 @@ namespace rlib {
 	private:
 		List	m_list;
 	};
+
+	using TempoListF = TempoListT<float>;
+	using TempoList = TempoListT<double>;
 
 }
