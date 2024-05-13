@@ -9,9 +9,9 @@ boost::format を利用した文字列フォーマットです。C++17 での実
   + 不正な型（非対応の型）を引数に与えるとコンパイルエラーになります。
 + stlコンテナ等を引数に指定出来ます。展開して出力します。
   + std::pair std::tuple
-    std::unique_ptr std::shared_ptr std::optional
-    std::array std::vector std::list std::deque std::initializer_list
-    std::set std::multiset std::map std::multimap
+	std::unique_ptr std::shared_ptr std::optional
+	std::array std::vector std::list std::deque std::initializer_list
+	std::set std::multiset std::map std::multimap
 
 ・使い方例
 	using std::cout;
@@ -79,6 +79,11 @@ boost::format を利用した文字列フォーマットです。C++17 での実
 	}
 */
 #pragma once
+
+#include <list>
+#include <deque>
+#include <set>
+#include <optional>
 
 #include <boost/format.hpp>
 

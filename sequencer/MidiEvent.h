@@ -1,4 +1,8 @@
-#pragma once
+ï»¿#pragma once
+
+#include <cassert>
+#include <vector>
+#include <functional>
 
 namespace rlib::midi {
 
@@ -36,7 +40,7 @@ namespace rlib::midi {
 		};
 #pragma pack( pop )
 
-		// ‰Â•Ï’·”’lì¬
+		// å¯å¤‰é•·æ•°å€¤ä½œæˆ
 		static std::vector<uint8_t> getVariableValue(uint64_t n) {
 			std::vector<uint8_t> v;
 			VariableValue vv;
@@ -52,7 +56,7 @@ namespace rlib::midi {
 			return v;
 		}
 
-		// ‰Â•Ï’·”’l‚©‚ç’l‚ğæ“¾
+		// å¯å¤‰é•·æ•°å€¤ã‹ã‚‰å€¤ã‚’å–å¾—
 		static uint64_t readVariableValue(const std::function<uint8_t()>& fReadByte) {
 			inner::VariableValue vv;
 			for (size_t i = 0; i < 8; i++) {	// failsafe
@@ -78,7 +82,7 @@ namespace rlib::midi {
 	};
 
 	struct EventCh : public Event {
-		const uint8_t	channel = 0;	// ƒ`ƒƒƒ“ƒlƒ‹ 0`15
+		const uint8_t	channel = 0;	// ãƒãƒ£ãƒ³ãƒãƒ« 0ï½15
 	protected:
 		EventCh(uint8_t channel_)
 			:channel(channel_)
@@ -86,8 +90,8 @@ namespace rlib::midi {
 	};
 
 	struct EventNote : public EventCh {
-		const uint8_t	note = 0;		// 0`127
-		const uint8_t	velocity = 0;	// 0`127
+		const uint8_t	note = 0;		// 0ï½127
+		const uint8_t	velocity = 0;	// 0ï½127
 	protected:
 		EventNote(uint8_t channel, uint8_t note_, uint8_t velocity_)
 			:EventCh(channel), note(note_), velocity(velocity_)
@@ -116,8 +120,8 @@ namespace rlib::midi {
 
 	struct EventPolyphonicKeyPressure : public EventCh {
 		static constexpr uint8_t statusByte = 0xa0;
-		const uint8_t	note = 0;		// 0`127
-		const uint8_t	pressure = 0;	// 0`127
+		const uint8_t	note = 0;		// 0ï½127
+		const uint8_t	pressure = 0;	// 0ï½127
 		EventPolyphonicKeyPressure(uint8_t channel, uint8_t note_, uint8_t pressure_)
 			:EventCh(channel), note(note_), pressure(pressure_)
 		{}
@@ -151,7 +155,7 @@ namespace rlib::midi {
 
 	struct EventProgramChange : public EventCh {
 		static constexpr uint8_t statusByte = 0xc0;
-		const uint8_t	programNo = 0;		// 0`127
+		const uint8_t	programNo = 0;		// 0ï½127
 		EventProgramChange(uint8_t channel, uint8_t programNo_)
 			:EventCh(channel), programNo(programNo_)
 		{}
@@ -162,7 +166,7 @@ namespace rlib::midi {
 
 	struct EventPitchBend : public EventCh {
 		static constexpr uint8_t statusByte = 0xe0;
-		const int16_t	pitchBend;			// -8192 ` 8191
+		const int16_t	pitchBend;			// -8192 ï½ 8191
 		EventPitchBend(uint8_t channel, int16_t pitchBend_)
 			:EventCh(channel), pitchBend(pitchBend_)
 		{}
@@ -174,7 +178,7 @@ namespace rlib::midi {
 
 	struct EventChannelPressure : public EventCh {
 		static constexpr uint8_t statusByte = 0xd0;
-		const uint8_t	channelPressure = 0;		// 0`127
+		const uint8_t	channelPressure = 0;		// 0ï½127
 		EventChannelPressure(uint8_t channel, uint8_t channelPressure_)
 			:EventCh(channel), channelPressure(channelPressure_)
 		{}
@@ -193,7 +197,7 @@ namespace rlib::midi {
 			std::vector<uint8_t> v;
 			v.push_back(statusByte);
 			v.insert(v.end(), data.begin(), data.end());
-			v.push_back(static_cast<unsigned char>(0xf7));			// I—¹ƒR[ƒh
+			v.push_back(static_cast<unsigned char>(0xf7));			// çµ‚äº†ã‚³ãƒ¼ãƒ‰
 			return v;
 		}
 	};
@@ -201,12 +205,12 @@ namespace rlib::midi {
 	struct EventMeta : public Event {
 		static constexpr uint8_t statusByte = 0xff;
 		enum class Type {
-			sequenceNo = 0x0,		// ƒV[ƒPƒ“ƒX”Ô†
+			sequenceNo = 0x0,		// ã‚·ãƒ¼ã‚±ãƒ³ã‚¹ç•ªå·
 			text = 0x1,
 			copyright = 0x2,
 			sequenceName = 0x3,
 			instrumentName = 0x4,
-			words = 0x5,			// ‰ÌŒ
+			words = 0x5,			// æ­Œè©
 			marker = 0x6,
 			channelPrefix = 0x20,
 			port = 0x21,
@@ -214,7 +218,7 @@ namespace rlib::midi {
 			tempo = 0x51,
 			smpte = 0x54,
 			meter = 0x58,
-			keySignature = 0x59,	// ’²†
+			keySignature = 0x59,	// èª¿å·
 			sequencerLocal = 0x7f,
 		};
 		const Type					type = Type::sequenceNo;
@@ -231,11 +235,11 @@ namespace rlib::midi {
 				statusByte,
 				static_cast<uint8_t>(type),
 			};
-			{// ƒf[ƒ^ƒTƒCƒY
+			{// ãƒ‡ãƒ¼ã‚¿ã‚µã‚¤ã‚º
 				std::vector<uint8_t> s = inner::getVariableValue(data.size());
 				v.insert(v.end(), std::make_move_iterator(s.begin()), std::make_move_iterator(s.end()));
 			}
-			v.insert(v.end(), data.begin(), data.end());	// ƒf[ƒ^
+			v.insert(v.end(), data.begin(), data.end());	// ãƒ‡ãƒ¼ã‚¿
 			return v;
 		}
 
@@ -248,7 +252,7 @@ namespace rlib::midi {
 			for (size_t i = 0; i < (std::min<size_t>)(data.size(), 3); i++) {
 				t.buf[i + 1] = data[i];
 			}
-			std::reverse(reinterpret_cast<uint8_t*>(&t.tempo), reinterpret_cast<uint8_t*>(&t.tempo) + sizeof(t.tempo));		// ƒGƒ“ƒfƒBƒAƒ“•ÏX
+			std::reverse(reinterpret_cast<uint8_t*>(&t.tempo), reinterpret_cast<uint8_t*>(&t.tempo) + sizeof(t.tempo));		// ã‚¨ãƒ³ãƒ‡ã‚£ã‚¢ãƒ³å¤‰æ›´
 			return 60000000.0 / t.tempo;
 		}
 
@@ -258,8 +262,8 @@ namespace rlib::midi {
 				uint32_t	tempo;
 			}t;
 			assert(sizeof(t) == 4);
-			t.tempo = static_cast<uint32_t>(60000000.0 / tempo);		// 4•ª‰¹•„‚ÌŠÔ(microsec)
-			std::reverse(reinterpret_cast<uint8_t*>(&t.tempo), reinterpret_cast<uint8_t*>(&t.tempo) + sizeof(t.tempo));		// ƒGƒ“ƒfƒBƒAƒ“•ÏX
+			t.tempo = static_cast<uint32_t>(60000000.0 / tempo);		// 4åˆ†éŸ³ç¬¦ã®æ™‚é–“(microsec)
+			std::reverse(reinterpret_cast<uint8_t*>(&t.tempo), reinterpret_cast<uint8_t*>(&t.tempo) + sizeof(t.tempo));		// ã‚¨ãƒ³ãƒ‡ã‚£ã‚¢ãƒ³å¤‰æ›´
 			return EventMeta(Type::tempo, { t.buf[1], t.buf[2], t.buf[3] });
 		}
 

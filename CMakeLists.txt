@@ -3,8 +3,6 @@
 #
 cmake_minimum_required (VERSION 3.8)
 
-project ("main")
-
 # デフォルトは Release ビルド
 if(NOT CMAKE_BUILD_TYPE)
 	set(CMAKE_BUILD_TYPE "Release" CACHE STRING
@@ -16,29 +14,31 @@ endif()
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+project("mmltosmf")
 
 # ソースをこのプロジェクトの実行可能ファイルに追加します。
-add_executable (mmltosmf
+add_executable( ${CMAKE_PROJECT_NAME}
 	"./mmltosmf.cpp"
 	"./sequencer/MmlCompiler.cpp"
 	"./sequencer/Smf.cpp"
 )
 
 # ライブラリ
-TARGET_LINK_LIBRARIES(mmltosmf stdc++fs)
-TARGET_LINK_LIBRARIES(mmltosmf boost_program_options)
-TARGET_LINK_LIBRARIES(mmltosmf boost_regex)
+TARGET_LINK_LIBRARIES( ${CMAKE_PROJECT_NAME} stdc++fs)
+TARGET_LINK_LIBRARIES( ${CMAKE_PROJECT_NAME} boost_program_options)
+TARGET_LINK_LIBRARIES( ${CMAKE_PROJECT_NAME} boost_regex)
 
 
 # TODO: テストを追加し、必要な場合は、ターゲットをインストールします。
 
+project("smftomml")
 
-add_executable (smftomml
+add_executable( ${CMAKE_PROJECT_NAME}
 	"./smftomml.cpp"
 	"./sequencer/Smf.cpp"
 )
 
 # ライブラリ
-TARGET_LINK_LIBRARIES(smftomml stdc++fs)
-TARGET_LINK_LIBRARIES(smftomml boost_program_options)
-TARGET_LINK_LIBRARIES(smftomml boost_regex)
+TARGET_LINK_LIBRARIES( ${CMAKE_PROJECT_NAME} stdc++fs)
+TARGET_LINK_LIBRARIES( ${CMAKE_PROJECT_NAME} boost_program_options)
+TARGET_LINK_LIBRARIES( ${CMAKE_PROJECT_NAME} boost_regex)

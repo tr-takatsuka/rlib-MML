@@ -1,4 +1,4 @@
-#pragma once
+ï»¿#pragma once
 
 namespace rlib {
 
@@ -6,12 +6,12 @@ namespace rlib {
 	public:
 		using Type = T;
 		enum {
-			timeBase = 480,			// •ª‰ğ”\(4•ª‰¹•„‚ ‚½‚è‚ÌƒJƒEƒ“ƒg)
+			timeBase = 480,			// åˆ†è§£èƒ½(4åˆ†éŸ³ç¬¦ã‚ãŸã‚Šã®ã‚«ã‚¦ãƒ³ãƒˆ)
 		};
 		struct Element {
-			uint64_t	position = 0;	// ˆÊ’u
-			T			tempo = 120.0;	// ƒeƒ“ƒ|
-			T			time = 0.0;		// ŠÔ(•b)
+			uint64_t	position = 0;	// ä½ç½®
+			T			tempo = 120.0;	// ãƒ†ãƒ³ãƒ
+			T			time = 0.0;		// æ™‚é–“(ç§’)
 
 			Element()
 			{}
@@ -59,21 +59,21 @@ namespace rlib {
 			m_list.clear();
 		}
 
-		// Tempo ‘}“ü
+		// Tempo æŒ¿å…¥
 		void insert(uint64_t position, T tempo) {
-			const auto i = m_list.insert(												// m_listPos ‚É’Ç‰Á
-				std::upper_bound(m_list.begin(), m_list.end(), position, LessPosition()),	// ‘ÎÛ‚Ì’l‚ğ’´‚¦‚éÅ‰
+			const auto i = m_list.insert(												// m_listPos ã«è¿½åŠ 
+				std::upper_bound(m_list.begin(), m_list.end(), position, LessPosition()),	// å¯¾è±¡ã®å€¤ã‚’è¶…ãˆã‚‹æœ€åˆ
 				Element(position, tempo));
-			updateTime(i);	// time XV
+			updateTime(i);	// time æ›´æ–°
 		}
 
-		// íœ
+		// å‰Šé™¤
 		void erase(const typename List::const_iterator& i) {
 			const size_t index = i - m_list.begin();
 			m_list.erase(i);
-			updateTime(m_list.begin() + index);	// time XV
+			updateTime(m_list.begin() + index);	// time æ›´æ–°
 		}
-		// íœiw’èˆÊ’u‚Ìw’èƒeƒ“ƒ|‚ğíœBŠY“–‚·‚é‚à‚Ì‚ª•¡”‚ ‚éê‡‚Íæ‚Ì‚à‚Ì‚Ì‚İíœj
+		// å‰Šé™¤ï¼ˆæŒ‡å®šä½ç½®ã®æŒ‡å®šãƒ†ãƒ³ãƒã‚’å‰Šé™¤ã€‚è©²å½“ã™ã‚‹ã‚‚ã®ãŒè¤‡æ•°ã‚ã‚‹å ´åˆã¯å…ˆã®ã‚‚ã®ã®ã¿å‰Šé™¤ï¼‰
 		//void erase(uint64_t nStep, double tempo) {
 		//	const auto r = getEqualRange(nStep);
 		//	for (CList::const_iterator i = r.first; i != r.second; i++) {
@@ -84,8 +84,8 @@ namespace rlib {
 		//	}
 		//}
 
-		// ŠÔ(•b)‚©‚çˆÊ’u(position)‚Æƒeƒ“ƒ|‚ğæ“¾
-		std::pair<uint64_t, T> getPositionAndTempo(T time)const {		// return pair<step,ƒeƒ“ƒ|>
+		// æ™‚é–“(ç§’)ã‹ã‚‰ä½ç½®(position)ã¨ãƒ†ãƒ³ãƒã‚’å–å¾—
+		std::pair<uint64_t, T> getPositionAndTempo(T time)const {		// return pair<step,ãƒ†ãƒ³ãƒ>
 			const auto i = std::upper_bound(m_list.begin(), m_list.end(), time, LessTime());
 			Element tempoDefault;
 			const Element& t = i == m_list.begin() ? tempoDefault : *(i - 1);
@@ -94,7 +94,7 @@ namespace rlib {
 				t.tempo);
 		}
 
-		// ˆÊ’u(count)‚©‚çŠÔ(•b)‚ğæ“¾
+		// ä½ç½®(count)ã‹ã‚‰æ™‚é–“(ç§’)ã‚’å–å¾—
 		T getTime(uint64_t position)const {
 			const auto i = getUpperBound(position);
 			Element tempoDefault;
@@ -110,27 +110,27 @@ namespace rlib {
 			return m_list;
 		}
 
-		// 1•b‚ ‚½‚è‚ÌƒJƒEƒ“ƒgæ“¾
+		// 1ç§’ã‚ãŸã‚Šã®ã‚«ã‚¦ãƒ³ãƒˆå–å¾—
 		static T getCountPerSec(T tempo) {
 			return tempo * timeBase / 60.0;
 		}
-		// 1ƒJƒEƒ“ƒg‚ ‚½‚è‚ÌŠÔ(•b)æ“¾
+		// 1ã‚«ã‚¦ãƒ³ãƒˆã‚ãŸã‚Šã®æ™‚é–“(ç§’)å–å¾—
 		static T getSecPerCount(T tempo) {
 			return static_cast<T>(60.0) / (tempo * timeBase);
 		}
 	private:
 
-		// ˆÊ’uæ“¾ (lower_bound:‘ÎÛ‚Ì’lˆÈã‚ÌÅ‰‚ğw‚·)
+		// ä½ç½®å–å¾— (lower_bound:å¯¾è±¡ã®å€¤ä»¥ä¸Šã®æœ€åˆã‚’æŒ‡ã™)
 		typename List::const_iterator getLowerBound(uint64_t position)const {
 			return std::lower_bound(m_list.begin(), m_list.end(), position, LessPosition());
 		}
 
-		// ˆÊ’uæ“¾ (upper_bound:‘ÎÛ‚Ì’l‚ğ’´‚¦‚éÅ‰‚ğw‚·)
+		// ä½ç½®å–å¾— (upper_bound:å¯¾è±¡ã®å€¤ã‚’è¶…ãˆã‚‹æœ€åˆã‚’æŒ‡ã™)
 		typename List::const_iterator getUpperBound(uint64_t position)const {
 			return std::upper_bound(m_list.begin(), m_list.end(), position, LessPosition());
 		}
 
-		void updateTime(typename List::iterator i) {	// time XV
+		void updateTime(typename List::iterator i) {	// time æ›´æ–°
 			Element tempoDefault;
 			Element* pBefore = i == m_list.begin() ? &tempoDefault : &*(i - 1);
 			for (; i != m_list.end(); i++) {

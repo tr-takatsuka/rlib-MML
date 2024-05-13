@@ -52,7 +52,6 @@ int main(const int argc, const char* const argv[])
 		try {
 			auto smf = midi::Smf::fromStream(fs);
 			const std::string mml = sequencer::smfToMml(smf);
-			auto fileImage = smf.getFileImage();
 
 			auto path = std::filesystem::u8path(output);
 			std::fstream fs(path, std::ios::out | std::ios::binary | std::ios::trunc);

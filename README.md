@@ -21,7 +21,11 @@ It can be compiled in a C++17 environment. The build requires boost.
 We have confirmed the operation in the following environment.
 
 - linux g++
-- windows VisualStudio 2019
+- windows VisualStudio 2019,2022
+
+### WebAssembly
+
+Experimental WebAssembly support is also available.
 
 # MML (Music Macro Language)
 

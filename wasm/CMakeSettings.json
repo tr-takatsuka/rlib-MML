@@ -1,0 +1,33 @@
+﻿{
+	"configurations": [
+		{
+			"name": "emsdk-Debug",
+			"generator": "Ninja",
+			"configurationType": "Debug",
+			"buildRoot": "${projectDir}\\out\\build\\${name}",
+			"installRoot": "${projectDir}\\out\\install\\${name}",
+			"cmakeExecutable": "cmake",
+			"cmakeCommandArgs": "",
+			"buildCommandArgs": "",
+			"ctestCommandArgs": "",
+			"cmakeToolchain": "${env.EMSDK}\\upstream\\emscripten\\cmake\\Modules\\Platform\\Emscripten.cmake",
+			"inheritEnvironments": [],
+			"intelliSenseMode": "windows-clang-x64"
+		},
+		{
+			"name": "emsdk-Release",
+			"generator": "Ninja",
+			"configurationType": "Release",
+			"buildRoot": "${projectDir}\\out\\build\\${name}",
+			"installRoot": "${projectDir}\\out\\install\\${name}",
+			"cmakeExecutable": "cmake",
+			"cmakeCommandArgs": "",
+			"buildCommandArgs": "",
+			"ctestCommandArgs": "",
+			"cmakeToolchain": "${env.EMSDK}\\upstream\\emscripten\\cmake\\Modules\\Platform\\Emscripten.cmake",
+			"inheritEnvironments": [],
+			"intelliSenseMode": "windows-clang-x64"
+		}
+
+	]
+}

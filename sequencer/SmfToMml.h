@@ -211,8 +211,8 @@ namespace rlib::sequencer {
 						result += string::format(u8"r%s", getLengthText(len));
 						state.position = it->position;
 					}
-
-					if (auto i = map.find(typeid(*it->event)); i != map.end()) {
+					const auto& ev = *it->event;
+					if (auto i = map.find(typeid(ev)); i != map.end()) {
 						(i->second)(it);
 					}// else assert(false);
 				}
