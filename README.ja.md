@@ -23,6 +23,10 @@ C++17 環境でコンパイルできます。ビルドには boost が必要で�
 - linux g++
 - windows VisualStudio 2019,2022
 
+### WebAssembly
+
+実験的に WebAssembly もサポートしています。
+
 # MML (Music Macro Language) 文法
 
 ## 音符 その他

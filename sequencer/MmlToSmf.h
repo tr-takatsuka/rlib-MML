@@ -1,5 +1,8 @@
 ﻿#pragma once
 
+#include <typeindex>
+#include <typeinfo>
+
 #include "MmlCompiler.h"
 #include "Smf.h"
 
@@ -43,7 +46,8 @@ namespace rlib::sequencer {
 						track.events.insert(Smf::Event(e.position, std::make_shared<midi::EventMeta>(midi::EventMeta::createTempo(e.tempo))));
 					}},
 				};
-				if (auto i = map.find(typeid(*event)); i != map.end()) {
+				const auto &ev = *event;
+				if (auto i = map.find(typeid(ev)); i != map.end()) {
 					(i->second)(track, port, *event);
 				} else assert(false);
 			}

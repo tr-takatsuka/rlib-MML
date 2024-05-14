@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en-us">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <title>rlibmml test</title>
+    <style>
+      #mml {
+        width: 100%;
+        height: calc(100vh - 100px);
+        margin: 0 auto;
+        margin-top: 10px;
+        border-left: 0px;
+        border-right: 0px;
+        padding-left: 0px;
+        padding-right: 0px;
+        display: block;
+        background-color: black;
+        color: white;
+        font-family: 'Lucida Console', Monaco, monospace;
+        outline: none;
+      }
+    </style>
+  </head>
+  <body>
+    <textarea id="mml" rows="8"></textarea>
+    <br/>
+    <button id="mmlToSmf">mmlToSmf</button>
+    <input id="smffileinput" type="file" />
+
+    <script async type="text/javascript" src="./out/build/emsdk-Debug/rlibmml.js"></script>
+    <script>
+      document.getElementById("mmlToSmf").addEventListener("click", async () => {
+        try {
+          const module = await Module();
+          const mml = document.getElementById("mml").value;
+          const r = module.mmlToSmf(mml);
+          if (r.ok) {
+            window.alert(`mmlToSmf ok: ${r.result}`);
+          } else {
+            window.alert(`mmlToSmf error: ${r.message}`);
+          }
+        } catch (e) {
+          window.alert(`exception:${e.message}`);
+        }
+      });
+
+      document.getElementById("smffileinput").addEventListener('change', function (e) {
+        const result = e.target.files[0];
+        const reader = new FileReader();
+        reader.onload = (async () => {
+          try {
+            const ar = new Uint8Array(reader.result);
+            const module = await Module();
+            const r = module.smfToMml(ar);
+            if (r.ok) {
+              document.getElementById("mml").value = r.result;
+              window.alert(`smfToMml ok`);
+            } else {
+              window.alert(`smfToMml error:${r.message}`);
+            }
+          } catch (e) {
+            window.alert(`exception:${e.message}`);
+          }
+        });
+        reader.readAsArrayBuffer(result);
+      });
+
+</script>
+  </body>
+</html>

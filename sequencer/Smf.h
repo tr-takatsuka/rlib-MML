@@ -1,5 +1,10 @@
 ﻿#pragma once
 
+#include <set>
+#include <list>
+#include <ostream>
+#include <memory>
+
 #include "MidiEvent.h"
 
 namespace rlib::midi {

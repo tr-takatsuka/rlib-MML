@@ -1,7 +1,8 @@
 ﻿
-#ifndef _MSC_VER
-#include <bits/stdc++.h>
-#endif
+//#ifndef _MSC_VER
+//#include <bits/stdc++.h>
+//#endif
+#include <regex>
 
 #include <boost/lexical_cast.hpp>
 #include <boost/regex.hpp>

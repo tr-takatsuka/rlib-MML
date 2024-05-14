@@ -1,7 +1,12 @@
 ﻿
-#ifndef _MSC_VER
-#include <bits/stdc++.h>
-#endif
+//#ifndef _MSC_VER
+//#include <bits/stdc++.h>
+//#endif
+
+#include <cstdint>
+#include <istream>
+#include <iostream>
+#include <math.h>
 
 #include "./Smf.h"
 
