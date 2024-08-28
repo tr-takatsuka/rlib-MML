@@ -35,6 +35,7 @@ project("smftomml")
 
 add_executable( ${CMAKE_PROJECT_NAME}
 	"./smftomml.cpp"
+	"./sequencer/MmlCompiler.cpp"
 	"./sequencer/Smf.cpp"
 )
 

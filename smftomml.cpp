@@ -29,7 +29,7 @@ int main(const int argc, const char* const argv[])
 		po::store(po::command_line_parser(argc, argv).options(desc).positional(pd).run(), vm);
 
 		if (vm.count("version")) {
-			std::cout << "rlib-MML smftomml version 1.1.1" << std::endl;
+			std::cout << "rlib-MML smftomml version 1.1.2" << std::endl;
 			return 0;
 		}
 

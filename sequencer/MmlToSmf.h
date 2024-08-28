@@ -14,6 +14,12 @@ namespace rlib::sequencer {
 		Smf smf;
 		for (const auto& port : result) {
 			Smf::Track track;
+
+			track.events.emplace(Smf::Event(0, std::make_shared<midi::EventMeta>(midi::EventMeta::createText(midi::EventMeta::Type::sequenceName, port.name))));
+			if (!port.instrument.empty()) {
+				track.events.emplace(Smf::Event(0, std::make_shared<midi::EventMeta>(midi::EventMeta::createText(midi::EventMeta::Type::instrumentName, port.instrument))));
+			}
+
 			for (const auto& event : port.eventList) {
 				static const std::map<std::type_index, void (*)(Smf::Track&, const MmlCompiler::Port&, const MmlCompiler::Event&)> map = {
 					{typeid(MmlCompiler::EventNote), [](Smf::Track& track,const MmlCompiler::Port& port,const MmlCompiler::Event& event) {
