@@ -81,7 +81,7 @@ std::vector<uint8_t> Smf::getFileImage() const
 		// EndOfTrackがなければ付ける
 		[&] {
 			if (auto i = track.events.rbegin(); i != track.events.rend()) {		// 末尾が EndOfTrack ではないなら
-				if (auto meta = std::static_pointer_cast<const midi::EventMeta>(i->event)) {
+				if (auto meta = std::dynamic_pointer_cast<const midi::EventMeta>(i->event)) {
 					if (meta->type == midi::EventMeta::Type::endOfTrack) {
 						return;
 					}

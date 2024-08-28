@@ -70,6 +70,8 @@ namespace rlib::sequencer {
 		};
 
 		struct Port {
+			std::string name;			// name
+			std::string	instrument;		// instrument
 			uint8_t	channel = 0;		// チャンネル
 			std::multiset<std::shared_ptr<const Event>, LessEvent>	eventList;
 		};
@@ -84,6 +86,7 @@ namespace rlib::sequencer {
 				lengthMinusError,				// 音長を負値にはできません
 				commentError,					// コメント指定に誤りがあります
 				argumentError,					// 関数の引数指定に誤りがあります
+				argumentUnknownError,			// 関数に不明な引数名があります
 				functionCallError,				// 関数呼び出しに誤りがあります
 				unknownNumberError,				// 数値の指定に誤りがあります
 				vCommandError,					// ベロシティ指定（v コマンド）に誤りがあります
@@ -131,6 +134,25 @@ namespace rlib::sequencer {
 		};
 
 		static Result compile(const std::string& mml);
+
+
+		struct Util {
+
+			// 単語情報
+			using Word = std::variant<
+				std::intmax_t,		// 符号付数値
+				std::uintmax_t,		// 符号ナシ数値 ( +○○ と記述されてた場合は intmax_t )
+				double,				// 浮動小数点数
+				std::pair<std::string::const_iterator, std::string::const_iterator>	// 文字列
+			>;
+
+			// 単語解析
+			struct ParsedWord {
+				std::optional<Word>	word;		// nullならエラー
+				std::string::const_iterator	next;	// 次の位置
+			};
+			static std::optional<ParsedWord> parseWord(const std::string::const_iterator& iBegin, const std::string::const_iterator& iEnd);
+		};
 
 		static void unitTest();
 	};

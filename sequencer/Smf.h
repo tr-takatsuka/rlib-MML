@@ -16,6 +16,10 @@ namespace rlib::midi {
 			const uint64_t								position;
 			const std::shared_ptr<const midi::Event>	event;
 
+			Event(const Event& e)
+				:position(e.position)
+				, event(e.event)
+			{}
 			Event(decltype(position) position_, const std::shared_ptr<const midi::Event> event_)
 				:position(position_)
 				, event(event_)
@@ -30,9 +34,11 @@ namespace rlib::midi {
 
 		};
 
+		using Events = std::multiset<Event, Event::Less>;
+
 		class Track {
 		public:
-			std::multiset<Event, Event::Less>	events;
+			Events	events;
 		};
 	public:
 		int					timeBase = 480;			// 分解能(4分音符あたりのカウント)

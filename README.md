@@ -59,7 +59,7 @@ Experimental WebAssembly support is also available.
 
 |  notation  |  description  |example|
 | ---- | ---- | ---- |
-|createPort(<br>&emsp;name:[port name],<br>&emsp;channel:[channel number],<br>)| Define (declare) the port<br>Channel numbers are 1-16.|"createPort(name:Piano, channel:3)" <br>→ Declare the port of MIDI channel 3 with the name "Piano".|
+|createPort(<br>&emsp;name:[port name],<br>&emsp;instrument:[instrument name]\(optional),<br>&emsp;channel:[channel number],<br>)| Define (declare) the port<br>Channel numbers are 1-16.|"createPort(name:Piano, channel:3)" <br>→ Declare the port of MIDI channel 3 with the name "Piano".<br>instrument specifies the name of the instrument. If omitted, the default instrument is used.|
 |port([port name])| It is port switching|"port(Piano) cde"  → CDE at Port "Piano"|
 |V([volume value])<br>ailias: volume|The volume. Values ​​are 0-127.| "V(120) cde"  → CDE at Volume 120.|
 |pan([pan value])<br>ailias: panpot|It is pan (panpot).<br>Values ​​range from 0 (far left) to 127 (far right), with 64 in the center.| "pan(0) cde"  → CDE at Pan 0 (far left).|

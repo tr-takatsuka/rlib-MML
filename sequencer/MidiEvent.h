@@ -133,12 +133,16 @@ namespace rlib::midi {
 	struct EventControlChange : public EventCh {
 		static constexpr uint8_t statusByte = 0xb0;
 		enum class Type {
-			bankselectMSB = 0,
+			bankSelectMSB = 0,
 			modulation = 1,
+			dataEntryMSB = 6,
 			volume = 7,
 			pan = 10,
 			expression = 11,
-			bankselectLSB = 32,
+			bankSelectLSB = 32,
+			dataEntryLSB = 38,
+			rpnLSB = 100,
+			rpnMSB = 101,
 		};
 		const Type		type = static_cast<Type>(0);
 		const uint8_t	value = 0;
@@ -254,6 +258,19 @@ namespace rlib::midi {
 			}
 			std::reverse(reinterpret_cast<uint8_t*>(&t.tempo), reinterpret_cast<uint8_t*>(&t.tempo) + sizeof(t.tempo));		// エンディアン変更
 			return 60000000.0 / t.tempo;
+		}
+
+		std::string getText()const {
+			std::string s;
+			std::copy(data.begin(), data.end(), std::back_inserter(s));
+			return s;
+		}
+
+		static EventMeta createText(Type type,const std::string &text) {
+			// TODO: ココで type のチェックを
+			std::vector<uint8_t> data;
+			std::copy(text.begin(), text.end(), std::back_inserter(data));
+			return EventMeta(type, std::move(data));
 		}
 
 		static EventMeta createTempo(double tempo) {

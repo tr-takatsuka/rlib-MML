@@ -3,6 +3,9 @@
 //#include <bits/stdc++.h>
 //#endif
 #include <regex>
+#include <charconv>
+#include <variant>
+#include <optional>
 
 #include <boost/lexical_cast.hpp>
 #include <boost/regex.hpp>
@@ -19,6 +22,7 @@ std::string MmlCompiler::Exception::getMessage(Code code) {
 		{Code::lengthMinusError,				u8R"(音長を負値にはできません)"},
 		{Code::commentError,					u8R"(コメント指定に誤りがあります)"},
 		{Code::argumentError,					u8R"(関数の引数指定に誤りがあります)"},
+		{Code::argumentUnknownError,			u8R"(関数に不明な引数名があります)"},
 		{Code::functionCallError,				u8R"(関数呼び出しに誤りがあります)"},
 		{Code::unknownNumberError,				u8R"(数値の指定に誤りがあります)"},
 		{Code::vCommandError,					u8R"(ベロシティ指定（v コマンド）に誤りがあります)"},
@@ -79,6 +83,14 @@ std::optional<boost::smatch> regexSearch(const std::string::const_iterator& iBeg
 
 using PairIterator = std::pair<std::string::const_iterator, std::string::const_iterator>;
 
+// std::string::const_iteratorをポインタに変換 (TODO: std::to_address に差し替えたい)
+const std::pair<const char*, const char*> toAddress(const std::string::const_iterator& iBegin, const std::string::const_iterator& iEnd) {
+	const size_t size = iEnd - iBegin;
+	if (size == 0) return { nullptr,nullptr };
+	auto p = &(*iBegin);
+	return { p,p + size };
+}
+
 // 文字列の先頭を比較
 std::optional<std::string::const_iterator> isStartsWith(const std::string::const_iterator& iBegin, const std::string::const_iterator& iEnd, const std::string& s) {
 	if (static_cast<size_t>(iEnd - iBegin) >= s.size() && std::equal(s.cbegin(), s.cend(), iBegin)) {
@@ -87,7 +99,7 @@ std::optional<std::string::const_iterator> isStartsWith(const std::string::const
 	return std::nullopt;
 };
 
-// 文字列パース
+// 文字列リテラルパース
 auto parseString(const std::string::const_iterator& iBegin, const std::string::const_iterator& iEnd) {
 	struct Result {
 		std::string::const_iterator	next;					// 次の位置
@@ -109,7 +121,7 @@ auto parseString(const std::string::const_iterator& iBegin, const std::string::c
 		const std::string delimiter = (*m)[1];
 		const auto iString = (*m)[0].second;					// 文字列開始位置
 #if 1
-		const auto sEnd = ")" + delimiter +"\"";
+		const auto sEnd = ")" + delimiter + "\"";
 		auto i = std::search(iString, iEnd, sEnd.begin(), sEnd.end());	// 終端を検索
 		if (i == iEnd) return result;									// 終端が見つからないならパースエラー
 		result->parsedString = { iString,i };
@@ -151,71 +163,82 @@ std::string::const_iterator parseComment(const std::string::const_iterator& iBeg
 	return it;
 };
 
-// 数値解析
-auto parseInt(const std::string::const_iterator& iBegin, const std::string::const_iterator& iEnd, bool sign) {
-	struct Result {
-		std::string::const_iterator		next;		// 次の位置
-		std::optional<bool>				sign;		// true:+ false:-
-		long long						value = 0;
-	};
-	std::optional<Result> result = Result();
-
-	auto const& re = [&] {
-		if (sign) {
-			static const regex re(R"(^\s*(?<value>(?<sign>[\+\-]?)[0-9]+))");
-			return re;
-		}
-		static const regex re(R"(^\s*(?<value>[0-9]+))");
-		return re;
-	}();
-	if (auto r = regexSearch(iBegin, iEnd, re)) {
-		result->next = (*r)[0].second;
-		result->value = boost::lexical_cast<long long>((*r)["value"]);
-		if (auto sign = (*r)["sign"].str(); !sign.empty()) {
-			result->sign = sign == "+" ? true : false;
-		}
-		return result;
+// 整数パース
+auto parseInt(const std::string::const_iterator& iBegin, const std::string::const_iterator& iEnd) {
+	struct {
+		std::string::const_iterator			next;
+		std::variant<intmax_t, uintmax_t>	value;	// 正数:uintmax_t 負数:intmax_t +○○:intmax_t
+	}result;
+	if (iBegin == iEnd) return std::optional<decltype(result)>();
+	const auto [begin, end] = toAddress(iBegin, iEnd);
+	bool const plus = *iBegin == '+';
+	const auto begin2 = begin + (plus ? 1 : 0);
+	intmax_t value;
+	const auto [ptr, ec] = std::from_chars(begin2, end, value);
+	if (ec != std::errc{}) return std::optional<decltype(result)>();
+	if (value < 0 || plus) {
+		result.value = static_cast<intmax_t>(value);
+	} else {
+		result.value = static_cast<uintmax_t>(value);
 	}
-	return decltype(result)();
+	result.next = iBegin + (ptr - begin);
+	return std::optional(result);
 }
 
+// 浮動小数点数パース
+auto parseDouble(const std::string::const_iterator& iBegin, const std::string::const_iterator& iEnd) {
+	struct {
+		std::string::const_iterator next;
+		double						value;
+	}result;
+#if 0
+	// emscripten では std::from_chars の double 版が使えない "call to deleted function 'from_chars'"
+	const auto [begin, end] = toAddress(iBegin, iEnd);
+	const auto [ptr, ec] = std::from_chars(begin, end, result.value, std::chars_format::fixed);	// 指数表記は不許可
+	if (ec != std::errc{}) return std::optional<decltype(result)>();
+	result.next = iBegin + (ptr - begin);
+	return std::optional(result);
+#else
+	if (const auto m = regexSearch(iBegin, iEnd, regex(R"(^([0-9]+(\.[0-9]*)?))"))) {	// regex(R"(^(\+?[0-9]+(\.[0-9]*)?([eE][\+-]?[0-9]+)?))"
+		result.value = boost::lexical_cast<double>((*m)[1].str());
+		result.next = (*m)[0].second;
+		return std::optional(result);
+	}
+	return std::optional<decltype(result)>();
+#endif
+}
+
+
 // 関数解析
-auto parseFunction(const std::string::const_iterator& iBegin, const std::string::const_iterator& iEnd, const std::vector<std::string>& functionNames) {
-	struct Result {
-		PairIterator						functionName;	// 関数名
-		std::string::const_iterator			next;			// 次の位置
-		std::map<std::string, PairIterator>	args;			// 引数リスト
+struct ParseFunctionResult {
+	PairIterator						functionName;		// 関数名
+	std::string::const_iterator			next;				// 次の位置
+	std::map<std::string, MmlCompiler::Util::Word>	args;	// 引数リスト
 
-		std::optional<PairIterator> findArg(const std::string name)const {
-			if (auto i = args.find(name); i != args.end()) return i->second;
-			return std::nullopt;
-		}
-
-		std::optional<std::string> findArgString(const std::string name)const {
-			if (auto i = args.find(name); i != args.end()) return std::string(i->second.first, i->second.second);
-			return std::nullopt;
-		}
-
-		auto findArgInt(const std::string name, bool sign)const {
-			struct Result {
-				std::optional<bool>	sign;		// true:+ false:-
-				long long			value = 0;
-			};
-			std::optional<Result> result = Result();
-
-			if (const auto i = args.find(name); i != args.end()) {
-				if (const auto r = parseInt(i->second.first, i->second.second, sign)) {
-					if (r->next == i->second.second) {		// 数値以外がある?
-						result->sign = r->sign;
-						result->value = r->value;
-						return result;
-					}
-				}
+	template <typename T> std::optional<T> findArg(const std::string& name)const {
+		if (auto i = args.find(name); i != args.end()) {
+			if (std::holds_alternative<T>(i->second)) {
+				return std::get<T>(i->second);
 			}
-			return decltype(result)();
 		}
-	};
-	std::optional<Result> result = Result();
+		return std::nullopt;
+	}
+
+	std::optional<std::string> findArgString(const std::string& name)const {
+		if (auto r = findArg<PairIterator>(name)) {
+			return std::string(r->first, r->second);
+		}
+		return std::nullopt;
+	}
+};
+
+auto parseFunction(
+	const std::string::const_iterator& iBegin,
+	const std::string::const_iterator& iEnd,
+	const std::vector<std::string>& functionNames,
+	const std::set<std::string>& argNames		// 引数名(ココにない引数名はエラー)
+) {
+	std::optional<ParseFunctionResult> result = ParseFunctionResult();
 
 	const auto func = [&]()->std::optional<std::string::const_iterator> {
 		struct R {
@@ -235,7 +258,7 @@ auto parseFunction(const std::string::const_iterator& iBegin, const std::string:
 	}();
 	if (!func) return decltype(result)();		// 該当しなかった
 
-	std::vector<decltype(result->args)::value_type::second_type> nonameArgs;	// 名前ナシ引数
+	std::vector<MmlCompiler::Util::Word> nonameArgs;	// 名前ナシ引数
 	std::string currentArgName;
 	union {									// 次トークン情報
 		struct {
@@ -278,6 +301,9 @@ auto parseFunction(const std::string::const_iterator& iBegin, const std::string:
 				const auto next = parseComment((*r)[0].second, iEnd);			// コメントを読み飛ばす
 				if (*next == ':') {													// ":" があれば引数名で確定
 					currentArgName = (*r)[0].str();
+					if (auto i = argNames.find(currentArgName); i == argNames.end()) {	// 引数名チェック
+						throw MmlCompiler::Exception(MmlCompiler::Exception::Code::argumentUnknownError, it, iEnd);
+					}
 					it = next + 1;
 					flags.all = 0;
 					flags.argValue = true;
@@ -288,40 +314,21 @@ auto parseFunction(const std::string::const_iterator& iBegin, const std::string:
 
 		if (flags.argValue) {		// 引数値
 
-			// 引数の値(文字列)
-			if (const auto r = parseString(it, iEnd)) {
-				if (!r->parsedString) {		// 文字列パースエラー
-					throw MmlCompiler::Exception(MmlCompiler::Exception::Code::argumentError, it, iEnd);
+			if (auto r = MmlCompiler::Util::parseWord(it, iEnd)) {
+				if (!r->word) {			// パースエラー
+					throw MmlCompiler::Exception(MmlCompiler::Exception::Code::argumentError, it, iEnd);	// 文字列パースエラーとする
 				}
 				it = r->next;
 				if (currentArgName.empty()) {
-					nonameArgs.emplace_back(*r->parsedString);
+					nonameArgs.emplace_back(std::move(*r->word));
 				} else {
-					result->args[currentArgName] = *r->parsedString;
+					result->args[currentArgName] = std::move(*r->word);
 					currentArgName.clear();
 				}
 				flags.all = 0;
 				flags.rightParen = true;
 				flags.comma = true;
 				continue;
-			}
-
-			{// 引数の値
-				static const auto re = regex(R"(^([\w\+\-]+))");		// "英字数値_+-"が対象
-				if (const auto r = regexSearch(it, iEnd, re)) {
-					const auto& m = (*r)[0];
-					it = m.second;
-					if (currentArgName.empty()) {
-						nonameArgs.emplace_back(m.first, m.second);
-					} else {
-						result->args[currentArgName] = { m.first, m.second };
-						currentArgName.clear();
-					}
-					flags.all = 0;
-					flags.rightParen = true;
-					flags.comma = true;
-					continue;
-				}
 			}
 
 			throw MmlCompiler::Exception(MmlCompiler::Exception::Code::argumentError, it, iEnd);
@@ -443,7 +450,6 @@ public:
 				std::optional<size_t>			length;
 			};
 			std::list<PastedSequence>	pastedSequences;
-			// std::list<std::pair<size_t, std::shared_ptr<const Sequence>>>	pastedSequences;
 		}state;
 		state.currentPort = &state.mapPort[""];
 
@@ -515,7 +521,7 @@ public:
 		};
 
 		const auto parseCreateSequence = [&state, &sequences](const iterator& begin, const iterator& end)->std::optional<iterator> {
-			if (auto r = parseFunction(begin, end, { "CreateSeq","CreateSequence" })) {
+			if (auto r = parseFunction(begin, end, { "CreateSeq","CreateSequence" }, { "name","mml" })) {
 				const auto name = (*r).findArgString("name").value_or("");
 				if (name.empty()) {
 					throw Exception(Exception::Code::createSequenceNameError, begin, end);
@@ -523,7 +529,7 @@ public:
 				if (const auto i = state.sequences.find(name); i != state.sequences.end()) {	// 既にあるなら
 					throw Exception(Exception::Code::createSequenceDuplicateError, begin, end);
 				}
-				const auto mml = (*r).findArg("mml");
+				const auto mml = (*r).findArg<PairIterator>("mml");
 				if (!mml) {
 					throw Exception(Exception::Code::createSequenceError, begin, end);
 				}
@@ -554,7 +560,7 @@ public:
 		};
 
 		const auto parseSequence = [&state, &sequences](const iterator& begin, const iterator& end)->std::optional<iterator> {
-			if (auto r = parseFunction(begin, end, { "Seq","Sequence" })) {
+			if (auto r = parseFunction(begin, end, { "Seq","Sequence" }, { "length" })) {
 				const auto name = (*r).findArgString("0").value_or("");
 				if (name.empty()) {
 					throw Exception(Exception::Code::sequenceNameError, begin, end);
@@ -574,7 +580,7 @@ public:
 				seq.position = port.position;
 
 				seq.length = [&]()->std::optional<size_t> {
-					const auto length = (*r).findArg("length");
+					const auto length = (*r).findArg<PairIterator>("length");
 					if (!length) return std::nullopt;
 					const auto len = parseLength(length->first, length->second, port.defaultStep);
 					if (len.next != length->second) {
@@ -602,7 +608,7 @@ public:
 		};
 
 		const auto parseCreatePort = [&state](const iterator& begin, const iterator& end)->std::optional<iterator> {
-			if (auto r = parseFunction(begin, end, { "CreatePort","createPort" })) {		// CreatePort
+			if (const auto r = parseFunction(begin, end, { "CreatePort","createPort" }, { "name","instrument","channel" })) {		// CreatePort
 				const auto name = (*r).findArgString("name").value_or("");
 				if (name.empty()) {
 					throw Exception(Exception::Code::createPortPortNameError, begin, end);
@@ -612,11 +618,13 @@ public:
 					throw Exception(Exception::Code::createPortDuplicateError, begin, end);
 				}
 				auto& port = r2.first->second;
-				const auto ch = r->findArgInt("channel", false);
-				if (!ch || ch->value < 1 || ch->value > 16) {
+				port.port.name = name;
+				if (const auto s = r->findArgString("instrument")) port.port.instrument = *s;
+				const auto ch = r->findArg<uintmax_t>("channel");
+				if (!ch || *ch < 1 || *ch > 16) {
 					throw Exception(Exception::Code::createPortChannelError, begin, end);
 				}
-				port.port.channel = static_cast<decltype(port.port.channel)>(ch->value - 1);
+				port.port.channel = static_cast<decltype(port.port.channel)>(*ch - 1);
 				state.currentPort = &state.mapPort[name];
 				return r->next;
 			}
@@ -624,7 +632,7 @@ public:
 		};
 
 		const auto parsePort = [&state](const iterator& begin, const iterator& end)->std::optional<iterator> {
-			if (auto r = parseFunction(begin, end, { "Port","port" })) {		// Port
+			if (auto r = parseFunction(begin, end, { "Port","port" }, {})) {		// Port
 				const auto name = (*r).findArgString("0").value_or("");
 				if (name.empty()) {
 					throw Exception(Exception::Code::portNameError, begin, end);
@@ -639,20 +647,18 @@ public:
 		};
 
 		const auto parseVolume = [&state](const iterator& begin, const iterator& end)->std::optional<iterator> {
-			if (auto r = parseFunction(begin, end, { "V","Volume","volume" })) {		// Volume
-				const auto v = (*r).findArgInt("0", true);
-				if (!v) {
-					throw Exception(Exception::Code::volumeError, begin, end);
-				}
+			if (auto r = parseFunction(begin, end, { "V","Volume","volume" }, {})) {		// Volume
 				auto& port = *state.currentPort;
-				if (v->sign) {		// 符号があるなら相対指定
-					auto n = port.volume + v->value;
-					port.volume = static_cast<decltype(port.volume)>((std::min)((std::max)(n, 0LL), 127LL));
-				} else {
-					if (v->value < 0 || v->value > 127) {
+				if (const auto v = r->findArg<intmax_t>("0")) {	// 符号付なら相対指定
+					const intmax_t n = port.volume + *v;
+					port.volume = static_cast<decltype(port.volume)>(std::min<decltype(n)>(std::max<decltype(n)>(n, 0), 127));
+				} else if (const auto v = r->findArg<uintmax_t>("0")) {	//  符号ナシなら絶対指定
+					if (*v < 0 || *v > 127) {
 						throw Exception(Exception::Code::volumeRangeError, begin, end);
 					}
-					port.volume = static_cast<decltype(port.volume)>(v->value);
+					port.volume = static_cast<decltype(port.volume)>(*v);
+				} else {
+					throw Exception(Exception::Code::volumeError, begin, end);
 				}
 				auto e = std::make_shared<EventVolume>();
 				e->position = port.position;
@@ -664,20 +670,18 @@ public:
 		};
 
 		const auto parsePan = [&state](const iterator& begin, const iterator& end)->std::optional<iterator> {
-			if (auto r = parseFunction(begin, end, { "Pan","pan" })) {		// Pan
-				const auto v = (*r).findArgInt("0", true);
-				if (!v) {
-					throw Exception(Exception::Code::panError, begin, end);
-				}
+			if (auto r = parseFunction(begin, end, { "Pan","pan" }, {})) {		// Pan
 				auto& port = *state.currentPort;
-				if (v->sign) {		// 符号があるなら相対指定
-					auto n = port.pan + v->value;
-					port.pan = static_cast<decltype(port.pan)>((std::min)((std::max)(n, 0LL), 127LL));
-				} else {
-					if (v->value < 0 || v->value > 127) {
+				if (const auto v = r->findArg<intmax_t>("0")) {	// 符号付なら相対指定
+					const intmax_t n = port.pan + *v;
+					port.pan = static_cast<decltype(port.pan)>(std::min<decltype(n)>(std::max<decltype(n)>(n, 0), 127));
+				} else if (const auto v = r->findArg<uintmax_t>("0")) {	//  符号ナシなら絶対指定
+					if (*v < 0 || *v > 127) {
 						throw Exception(Exception::Code::panRangeError, begin, end);
 					}
-					port.pan = static_cast<decltype(port.pan)>(v->value);
+					port.pan = static_cast<decltype(port.pan)>(*v);
+				} else {
+					throw Exception(Exception::Code::panError, begin, end);
 				}
 				auto e = std::make_shared<EventPan>();
 				e->position = port.position;
@@ -689,18 +693,19 @@ public:
 		};
 
 		const auto parsePitchBend = [&state](const iterator& begin, const iterator& end)->std::optional<iterator> {
-			if (auto r = parseFunction(begin, end, { "PitchBend","pitchBend" })) {		// PitchBend
-				const auto v = (*r).findArgInt("0", true);
-				if (!v) {
+			if (auto r = parseFunction(begin, end, { "PitchBend","pitchBend" }, {})) {		// PitchBend
+				const auto v = [&]()->intmax_t {
+					if (const auto v = r->findArg<intmax_t>("0")) return *v;
+					if (const auto v = r->findArg<uintmax_t>("0")) return *v;
 					throw Exception(Exception::Code::pitchBendError, begin, end);
-				}
+				}();
 				auto& port = *state.currentPort;
-				if (v->value < -8192 || v->value > 8191) {
+				if (v < -8192 || v > 8191) {
 					throw Exception(Exception::Code::pitchBendRangeError, begin, end);
 				}
 				auto e = std::make_shared<EventPitchBend>();
 				e->position = port.position;
-				e->pitchBend = static_cast<decltype(e->pitchBend)>(v->value);
+				e->pitchBend = static_cast<decltype(e->pitchBend)>(v);
 				port.port.eventList.insert(e);
 				return r->next;
 			}
@@ -708,26 +713,25 @@ public:
 		};
 
 		const auto parseControlChange = [&state](const iterator& begin, const iterator& end)->std::optional<iterator> {
-			if (auto r = parseFunction(begin, end, { "CC","ControlChange","controlChange" })) {		// ControlChange
+			if (auto r = parseFunction(begin, end, { "CC","ControlChange","controlChange" }, { "no","value" })) {		// ControlChange
 				const auto no = [&] {
-					if (auto n = r->findArgInt("0", false)) return n;
-					return r->findArgInt("no", false);
+					if (auto v = r->findArg<uintmax_t>("0")) return *v;
+					if (auto v = r->findArg<uintmax_t>("no")) return *v;
+					throw Exception(Exception::Code::controlChangeError, begin, end);
 				}();
 				const auto val = [&] {
-					if (auto n = r->findArgInt("1", false)) return n;
-					return r->findArgInt("value", false);
-				}();
-				if (!no || !val) {
+					if (auto v = r->findArg<uintmax_t>("1")) return *v;
+					if (auto v = r->findArg<uintmax_t>("value")) return *v;
 					throw Exception(Exception::Code::controlChangeError, begin, end);
-				}
-				if (no->value < 0 || no->value > 127 || val->value < 0 || val->value > 127) {
+				}();
+				if (no < 0 || no > 127 || val < 0 || val > 127) {
 					throw Exception(Exception::Code::controlChangeRangeError, begin, end);
 				}
 				auto& port = *state.currentPort;
 				auto e = std::make_shared<EventControlChange>();
 				e->position = port.position;
-				e->no = static_cast<decltype(e->no)>(no->value);
-				e->value = static_cast<decltype(e->no)>(val->value);
+				e->no = static_cast<decltype(e->no)>(no);
+				e->value = static_cast<decltype(e->no)>(val);
 				port.port.eventList.insert(e);
 				return r->next;
 			}
@@ -738,16 +742,15 @@ public:
 		const auto parseTempo = [&state](const iterator& begin, const iterator& end)->std::optional<iterator> {
 			if (const auto r = isStartsWith(begin, end, "t")) {
 				auto it = parseComment(*r, end);			// コメントを読み飛ばす
-				if (const auto r2 = regexSearch(it, end, regex(R"(^(\+?[0-9]+(\.[0-9]*)?([eE][\+-]?[0-9]+)?))"))) {
-					double tempo = boost::lexical_cast<double>((*r2)[1].str());
+				if (const auto r2 = parseDouble(it, end)) {
 					auto& port = *state.currentPort;
 					auto e = std::make_shared<EventTempo>();
 					e->position = port.position;
-					e->tempo = tempo;
+					e->tempo = r2->value;
 					port.port.eventList.insert(e);
-					return (*r2)[0].second;
+					return r2->next;
 				}
-				throw Exception(Exception::Code::programchangeCommandError, begin, end);
+				throw Exception(Exception::Code::tCommandRangeError, begin, end);
 			}
 			return std::nullopt;
 		};
@@ -839,14 +842,15 @@ public:
 		const auto parseVelocity = [&state](const iterator& begin, const iterator& end)->std::optional<iterator> {
 			if (const auto r = isStartsWith(begin, end, "v")) {
 				auto it = parseComment(*r, end);			// コメントを読み飛ばす
-				const auto v = parseInt(it, end, true);
+				const auto v = parseInt(it, end);
 				if (!v) throw Exception(Exception::Code::vCommandError, begin, end);
 				auto& port = *state.currentPort;
-				if (v->sign) {		// 符号付きなら相対指定
-					auto n = port.velocity + v->value;
-					port.velocity = static_cast<decltype(port.velocity)>((std::min)((std::max)(n, 0LL), 127LL));
+				if (std::holds_alternative<intmax_t>(v->value)) {// 符号付きなら相対指定
+					const intmax_t n = port.velocity + std::get<intmax_t>(v->value);
+					port.velocity = static_cast<decltype(port.velocity)>(std::min<decltype(n)>(std::max<decltype(n)>(n, 0), 127));
 				} else {
-					auto n = v->value;
+					assert(std::holds_alternative<uintmax_t>(v->value));
+					auto n = std::get<uintmax_t>(v->value);
 					if (n < 0 || n > 127) {		// 範囲チェック
 						throw Exception(Exception::Code::vCommandRangeError, begin, end);
 					}
@@ -906,13 +910,16 @@ public:
 			result.emplace_back(std::move(i.second.port));
 		}
 
+		// Sequence 展開
 		for (auto& i : state.pastedSequences) {
 			size_t postion = i.position;
 			auto& spSequence = i.sequence;
-			size_t length = i.length ? *i.length : (std::numeric_limits<size_t>::max)();
+			const size_t length = i.length ? *i.length : (std::numeric_limits<size_t>::max)();
 
 			for( auto& port : spSequence->ports) {
 				Port p;
+				p.name = port.name;
+				p.instrument = port.instrument;
 				p.channel = port.channel;
 				for (auto& spEvent : port.eventList) {
 					auto sp = spEvent->clone();
@@ -973,7 +980,80 @@ MmlCompiler::Result MmlCompiler::compile(const std::string& mml) {
 }
 
 
+std::optional<MmlCompiler::Util::ParsedWord> MmlCompiler::Util::parseWord(const std::string::const_iterator& iBegin, const std::string::const_iterator& iEnd) {
+
+	ParsedWord parsedWord;
+
+	// 文字列リテラルパース
+	if (auto r = parseString(iBegin, iEnd)) {
+		parsedWord.next = r->next;
+		if (r->parsedString) {		// パースエラーチェック
+			parsedWord.word = *r->parsedString;
+		}
+		return parsedWord;
+	}
+
+	// 整数パース
+	if (auto r = parseInt(iBegin, iEnd)) {
+		if (r->next == iEnd || *r->next != '.') {		// 直後に . があれば浮動小数点数として次へ
+			parsedWord.next = r->next;
+			if (std::holds_alternative<intmax_t>(r->value)) {
+				parsedWord.word = std::get<intmax_t>(r->value);
+			} else {
+				assert(std::holds_alternative<uintmax_t>(r->value));
+				parsedWord.word = std::get<uintmax_t>(r->value);
+			}
+			return parsedWord;
+		}
+	}
+
+	// 浮動小数点数パース
+	if (auto r = parseDouble(iBegin, iEnd)) {
+		parsedWord.next = r->next;
+		parsedWord.word = r->value;
+		return parsedWord;
+	}
+
+	{// みなし文字列
+		static const auto re = regex(R"(^([a-zA-Z_][\w\+\-]*))");		// 頭文字は英字_ で英字数値_+- が対象
+		if (const auto r = regexSearch(iBegin, iEnd, re)) {
+			const auto& m = (*r)[0];
+			parsedWord.next = m.second;
+			parsedWord.word = std::make_pair(m.first, m.second);
+			return parsedWord;
+		}
+	}
+
+	return std::nullopt;
+}
+
+
 void MmlCompiler::unitTest() {
+
+	std::string s("1.5e5 is pi");
+	auto a = parseDouble(s.begin(),s.end());
+
+	std::string s1("+1.1e5 is pi");
+	auto a1 = parseInt(s1.begin(), s1.end());
+
+	{
+		static const std::initializer_list<std::pair<std::string, size_t>> list = {
+			{"",		480		},
+			{"a",		480		},
+			{"1",		1920	},
+			{"1-!240",	1920 - 240	},
+			{"1+8",		1920 + 240	},
+			{".",		480 + 240	},
+			{"..",		480 + 240 + 120	},
+			{"..+",		480 + 240 + 120 + 480},
+			{"..+a",	480 + 240 + 120 + 480},
+		};
+		for (auto i : list) {
+			const auto& s = i.first;
+			assert(parseLength(s.begin(), s.end(), 480).step == i.second);
+		}
+	}
+
 
 	{
 		static const std::initializer_list<std::pair<std::string, size_t>> list = {

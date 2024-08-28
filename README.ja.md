@@ -58,7 +58,7 @@ C++17 環境でコンパイルできます。ビルドには boost が必要で�
 
 |  表記  |  説明  |例|
 | ---- | ---- | ---- |
-|CreatePort(<br>&emsp;name:[ポート名],<br>&emsp;channel:[チャンネル番号],<br>)| ポートを定義(宣言)します<br>チャンネル番号は 1～16 です。|"CreatePort(name:Piano, channel:3)" <br>→ "Piano"という名称でMIDIチャンネル3のポートを宣言し、切り替えます。|
+|CreatePort(<br>&emsp;name:[ポート名],<br>&emsp;instrument:[楽器名]\(省略可),<br>&emsp;channel:[チャンネル番号],<br>)| ポートを定義(宣言)します<br>チャンネル番号は 1～16 です。|"CreatePort(name:Piano, channel:3)" <br>→ "Piano"という名称でMIDIチャンネル3のポートを宣言し、切り替えます。<br>instrument は楽器名を指定します。省略するとデフォルトの楽器が対象です。|
 |Port([ポート名])| ポート切り替えです|"Port(Piano) cde"  → ポート"Piano" で ドレミです|
 |V([音量値])<br>別名 Volume| 音量です。値は 0～127です。<br>符号を付けると現在値からの相対指定になります。| "V(120) cde V(-30) fga"<br>→ 音量120でドレミです、音量90でファソラです|
 |Pan([パン値])<br>別名 Panpot| パン(パンポット)です。<br>値は 0(左端)～127(右端)で、中央は64です。<br>符号を付けると現在値からの相対指定になります。| "Pan(10) cde Pan(+50) fga"<br>→ パン10でドレミ、パン60でファソラです|
