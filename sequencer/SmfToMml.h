@@ -1,18 +1,86 @@
 ﻿#pragma once
 
+#ifndef __EMSCRIPTEN__
+//#include <boost/locale/generator.hpp>
+#include <boost/locale/encoding.hpp> 
+//#include <boost/locale/util.hpp> 
+#endif
+
 #include "MidiEvent.h"
 #include "Smf.h"
 #include "TempoList.h"
 #include "MmlCompiler.h"
 
 #include "../stringformat/StringFormat.h"
+#include "../json/Json.h"
+
+
+
 
 namespace rlib::sequencer {
 
 	inline std::string smfToMml(const midi::Smf& smf) {
 		using Smf = midi::Smf;
 
-		const auto makeMml = [](const std::string& name, const std::string& instrument, int channel, const Smf::Events& events) {
+		// 文字列を必要に応じて " " や R"( )" で括る 
+		const auto safeText = [](const std::string& text) {
+			const auto isValidName = [](const std::string& s) {
+				auto r = MmlCompiler::Util::parseWord(s.begin(), s.end());
+				if (r && r->word) {
+					if (std::holds_alternative<std::pair<std::string::const_iterator, std::string::const_iterator>>(*r->word)) {
+						return r->next == s.end();
+					}
+				}
+				return false;
+			};
+			if (isValidName(text)) return text;
+			if (auto t = string::format(u8R"("%s")", text); isValidName(t)) {	// ダメなら " " で括る
+				return t;
+			}
+			if (auto t = string::format(u8R"_(R"(%s)")_", text); isValidName(t)) {	// ダメなら R"( )" で括る
+				return t;
+			}
+			for (int i = 0; i < 1000; i++) {
+				if (auto t = string::format(u8R"(R"t%d(%s)t%d")", i, text, i); isValidName(t)) {	// それでもダメなら R"t?(○○)t?" で括る
+					return t;
+				}
+			}
+			return string::format(u8R"(R"t_(%s)t_")", text);	// 最後は R"t_(○○)t_" で諦める
+		};
+
+		const auto decodeText = [](const std::string& bin)->std::optional<std::string> {
+			try {
+				const auto hasControlCode = [](const std::string& s) {
+					static const std::regex controlCode(R"([\x00-\x08\x0B-\x1F\x7F])");	// 改行(\x0A)とタブ(\x09)は許可し、他の制御文字を検出
+					return std::regex_search(s, controlCode);
+				};
+#ifndef __EMSCRIPTEN__
+				const auto sjisToUtf8 = [](const std::string& sjisStr)->std::optional<std::string> {
+					try {
+						return boost::locale::conv::to_utf<char>(sjisStr.c_str(), "Shift-JIS");
+					} catch (...) {
+					}
+					return std::nullopt;
+				};
+
+				// SJIS
+				if (const auto s = sjisToUtf8(bin)) {
+					if (!hasControlCode(*s)) {
+						return s;
+					}
+				}
+#endif
+
+				// そのまま
+				if (!hasControlCode(bin)) {
+					return bin;
+				}
+			} catch (...) {
+			}
+			return std::nullopt;
+		};
+
+		const auto makeMml = [&](const std::string& name, const std::string& instrument, int channel, const Smf::Events& events) {
 
 			struct {
 				int		note = -1;
@@ -162,6 +230,9 @@ namespace rlib::sequencer {
 					const bool overlap = [&] {
 						auto i = it;
 						i++;
+						if (i == events.end()) {
+							return false;
+						}
 						if (isNoteOff(i->event) || i->position >= it->position + len) {	// ない?
 							return false;
 						}
@@ -226,10 +297,59 @@ namespace rlib::sequencer {
 					switch (e.type) {
 					case midi::EventMeta::Type::tempo:
 						*mmls.rbegin() += string::format(u8"t%s", e.getTempo());
+						return;
+					case midi::EventMeta::Type::sequencerLocal:
+						try {
+							// rlib-MML 固有情報なら展開する
+							if (const auto json = Json::parse(e.getText())["rlib-MML"]; !json.isNull()) {
+								const auto& map = json["fm4op"].get<Json::Map>();
+								if (!map.empty()) {
+									for (const auto it : map) {
+										const auto no = std::stoi(it.first);
+										const auto& name = it.second["name"].get<std::string>();
+										const auto& data = it.second["reg"].get<Json::Array>();
+										*mmls.rbegin() += string::format(
+											u8"\nDefinePresetFM(no:%d, name:%s,\n"
+											u8"// AR  DR  SR  RR  SL  TL KS ML DT\n"
+											u8"  %3d,%3d,%3d,%3d,%3d,%3d,%2d,%2d,%2d,\n"
+											u8"  %3d,%3d,%3d,%3d,%3d,%3d,%2d,%2d,%2d,\n"
+											u8"  %3d,%3d,%3d,%3d,%3d,%3d,%2d,%2d,%2d,\n"
+											u8"  %3d,%3d,%3d,%3d,%3d,%3d,%2d,%2d,%2d,\n"
+											u8"// AL  FB\n"
+											u8"  %3d,%3d)\n"
+											, no, safeText(name), data);
+									}
+								}
+								return;
+							}
+						} catch (...) {
+						}
+						break;
+					case midi::EventMeta::Type::endOfTrack:
+					case midi::EventMeta::Type::sequenceName:
+					case midi::EventMeta::Type::instrumentName:
+						return;			// 何も出力しない
+					case midi::EventMeta::Type::text:
+					case midi::EventMeta::Type::copyright:
+					case midi::EventMeta::Type::words:
+						if (auto text = decodeText(e.getText())) {		// 文字列？
+							const auto s = safeText(*text);			// 必要に応じて " で括る
+							*mmls.rbegin() += string::format(u8"\nMeta(type:0x%x,%s)", static_cast<unsigned int>(e.type), s);
+							return;
+						}
 						break;
 					default:
 						break;
 					}
+					// バイナリデータとして出力
+					const auto toJoinString = [](const std::vector<uint8_t>& v)-> std::string {	// std::vector<uint8_t> をカンマ区切りの文字列に変換
+						std::ostringstream oss;
+						for (auto& n : v) {
+							oss << "," << static_cast<unsigned int>(n);
+						}
+						return oss.str();
+					};
+					*mmls.rbegin() += string::format(u8"\nMeta(type:0x%x%s)", static_cast<unsigned int>(e.type), toJoinString(e.data));
 				}},
 			};
 
@@ -284,7 +404,7 @@ namespace rlib::sequencer {
 		};
 
 
-		std::map<TrackKey, MapEvents> mapTrack = [](const midi::Smf& smf) {
+		std::map<TrackKey, MapEvents> mapTrack = [&decodeText](const midi::Smf& smf) {
 
 			std::map<TrackKey, MapEvents> resultMapTrack;
 
@@ -297,28 +417,32 @@ namespace rlib::sequencer {
 						resultMapTrack[trackKey][e->channel].insert(event);
 					} else if (auto e = std::dynamic_pointer_cast<const midi::EventMeta>(event.event)) {
 
-						const auto name = [](const std::string &s) {
+						const auto name = [&decodeText](const std::string& s)->std::optional<std::string> {
+
+							const auto decoded = decodeText(s).value_or(s);
+
 							// 文字列 trim 全角スペース対応
 							const auto stringTrim = [](const std::string& s)->std::string {
-								std::smatch m;
-								static const std::regex re(u8R"(^(\s|　)*([\s\S]+?)(\s|　)*$)");
-								if (std::regex_search(s, m, re)) {
-									if (auto sm = m[2]; sm.matched) {
-										return sm.str();
-									}
-								}
-								return "";
+#ifndef _MSC_VER
+								using namespace std;
+#else
+								using namespace boost;	// MSCだとstd::regex_searchで落ちるケースがあるのでとりあえずboostを使う
+#endif
+								static const regex re(R"(^([ \a\b\e\f\n\r\t\v]|　)+|([ \a\b\e\f\n\r\t\v]|　)+$)");	// "\s"は日本語でヘンになる
+								return regex_replace(s, re, "");
 							};
-							auto name = stringTrim(s);
-							return name.empty() ? boost::optional<std::string>() : boost::optional<std::string>(name);
+							if (auto result = stringTrim(decoded); !result.empty()) return result;
+							return std::nullopt;
 						};
 
 						switch (e->type) {
 						case midi::EventMeta::Type::sequenceName:
 							trackKey.sequenceName = name(e->getText()).value_or(TrackKey().sequenceName);
+							resultMapTrack[trackKey][metaChannel].insert(event);
 							break;
 						case midi::EventMeta::Type::instrumentName:
 							trackKey.instrumentName = name(e->getText()).value_or(TrackKey().instrumentName);
+							resultMapTrack[trackKey][metaChannel].insert(event);
 							break;
 						default:
 							resultMapTrack[trackKey][metaChannel].insert(event);
@@ -364,27 +488,6 @@ namespace rlib::sequencer {
 				const int channel = iMapEvents.first;
 				const auto needChannelName = iMapTrack.second.size() > 1;	// 名前に Cannel を含める必要アリ（含めないと重複する）
 
-				const auto ensureName = [](const std::string &name) {
-					const auto isValidName = [](const std::string& s) {
-						auto r = MmlCompiler::Util::parseWord(s.begin(), s.end());
-						if (r && r->word) {
-							if (std::holds_alternative<std::pair<std::string::const_iterator, std::string::const_iterator>>(*r->word)) {
-								return r->next == s.end();
-							}
-						}
-						return false;
-					};
-					if (isValidName(name)) return name;
-					auto t = string::format(u8R"("%s")",name);	// ダメなら " で括る
-					if (isValidName(t)) return t;
-
-					for (int i = 0; i < 1000; i++) {
-						auto t = string::format(u8R"(R"t%d(%s)t%d")", i, name, i);	// それでもダメなら R"t?(○○)t?" で括る
-						if (isValidName(t)) return t;
-					}
-					return string::format(u8R"(R"t_(%s)t_")", name);	// 最後は R"t_(○○)t_" で諦める
-				};
-
 				const auto trackName = [&] {
 					std::string s(sequenceName);
 					if (needInstrumentName) {
@@ -393,13 +496,13 @@ namespace rlib::sequencer {
 					if (needChannelName) {
 						s += string::format("-%02d", channel + 1);
 					}
-					return ensureName(s);
+					return safeText(s);
 				}();
 
 				const auto instrument = [&] {
 					std::string s(iMapTrack.first.instrumentName);
 					if (s.empty()) return s;
-					return ensureName(s);
+					return safeText(s);
 				}();
 
 				Smf::Events& events = iMapEvents.second;
@@ -410,130 +513,6 @@ namespace rlib::sequencer {
 			}
 		}
 
-
-#if 0
-		auto mapTracks = [&] {
-			std::list<SmfTrack> smfTracks = [&] {
-				std::list<SmfTrack> smfTracks;
-				for (auto& track : smf2.tracks) {
-					SmfTrack smfTrack;
-					Smf::Events metaEvents;
-					for (auto& event : track.events) {
-						if (auto e = std::dynamic_pointer_cast<const midi::EventCh>(event.event)) {
-							smfTrack.mapEvents[e->channel].insert(event);
-						} else if (auto e = std::dynamic_pointer_cast<const midi::EventMeta>(event.event)) {
-							metaEvents.insert(event);
-							switch (e->type) {
-							case midi::EventMeta::Type::sequenceName:
-								if (smfTrack.sequenceName.empty()) smfTrack.sequenceName = e->getText();
-								break;
-							case midi::EventMeta::Type::instrumentName:
-								if (smfTrack.instrumentName.empty()) smfTrack.instrumentName = e->getText();
-								break;
-							default:
-								break;
-							}
-						} else if (auto e = std::dynamic_pointer_cast<const midi::EventExclusive>(event.event)) {
-							metaEvents.insert(event);
-						} else {
-							assert(false);
-						}
-					}
-
-					// metaイベントを一番若いチャンネルの列に
-					auto& events = smfTrack.mapEvents.empty() ? smfTrack.mapEvents[0] : smfTrack.mapEvents.begin()->second;
-					for (auto& e : metaEvents) {
-						events.insert(events.lower_bound(e.position), e);	// 等価の列の先頭に挿入
-					}
-					smfTracks.emplace_back(std::move(smfTrack));
-				}
-				return smfTracks;
-			}();
-
-			// 文字列 trim 全角スペース対応
-			const auto stringTrim = [](const std::string& s)->std::string {
-				// boost::regex で全角スペースを正しく処理する術がわからない。バイナリとして扱うことも不可だった。
-				std::smatch m;
-				static const std::regex re(u8R"(^(\s|　)*([\s\S]+?)(\s|　)*$)");
-				if (std::regex_search(s, m, re)) {
-					if (auto sm = m[2]; sm.matched) {
-						return sm.str();
-					}
-				}
-				return "";
-			};
-
-			// sequenceName, instrumentName 毎にまとめる
-			std::map<std::string, std::map<std::string, std::vector<SmfTrack>>> mapTracks;		// <sequenceName<instrumentName,evnets>>
-			for (auto& smfTrack : smfTracks) {
-				const auto sequenceName = [&]{
-					std::string s = smfTrack.sequenceName.empty() ? "tr" : smfTrack.sequenceName;		// sequenceNameが未定義だったら "tr" とする
-					return stringTrim(s);
-				}();
-				const auto instrumentName = stringTrim(smfTrack.instrumentName);
-				auto& list = mapTracks[sequenceName][instrumentName];
-				// 合成する(合成しない場合はココをお休み)
-				if (!list.empty()) {
-					auto &dstMapEvents = list[0].mapEvents;
-					for (auto& pair : smfTrack.mapEvents) {
-						const int ch = pair.first;
-						auto& dst = dstMapEvents[ch];
-						for (auto& e : pair.second) {
-							dst.insert(e);
-						}
-					}
-				} else {
-					list.emplace_back(std::move(smfTrack));
-				}
-			}
-			return mapTracks;
-		}();
-
-		std::string result;
-		for (const auto& i : mapTracks) {
-			const auto sequenceName = i.first;
-			for (const auto& j : i.second) {
-				const auto instrumentName = j.first;
-				const auto& smfTracks = j.second;
-				const auto needInstrumentName = smfTracks.size() > 1;			// 名前に InstrumentName を含める必要アリ（含めないと重複する）
-				for (const auto& smfTrack : smfTracks) {
-					const auto needChannelName = smfTrack.mapEvents.size() > 1;	// 名前に channel を含める必要アリ（含めないと重複する）
-					for (auto pairEvent : smfTrack.mapEvents) {
-						const auto channel = pairEvent.first;
-						const auto trackName = [&]{
-							std::string s(sequenceName);
-							if (needInstrumentName) {
-								s += "-" + instrumentName;
-							}
-							if (needChannelName) {
-								s += string::format("%02d", channel);
-							}
-
-							const auto isValidName = [](const std::string& s) {
-								auto r = MmlCompiler::Util::parseWord(s.begin(), s.end());
-								if (r && r->word) {
-									if (std::holds_alternative<std::pair<std::string::const_iterator, std::string::const_iterator>>(*r->word)) {
-										return r->next == s.end();
-									}
-								}
-								return false;
-							};
-
-							if( isValidName(s) ) return s;
-							auto t = "\"" + s + "\"";				// " で括る
-							if (isValidName(t)) return t;
-							return u8R"(R"tr()" + s + u8R"()tr")";	// それでもダメなら R"tr(○○)tr" で括る
-						}();
-
-						const auto mml = makeMml(trackName, channel, pairEvent.second);
-						result += mml;
-					}
-				}
-			}
-		}
-
-
-#endif
 		return result;
 	}
 

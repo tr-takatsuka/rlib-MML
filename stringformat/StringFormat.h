@@ -166,7 +166,7 @@ namespace rlib
 						f<CharT>(format, i);
 					}
 					f<CharT>(format, tail...);
-#ifdef _MSC_VER
+#if defined(_MSC_VER) && defined(AFX_EXT_CLASS)
 				} else if constexpr (std::is_same_v<HeadT, CStringA> || std::is_same_v<HeadT, CStringW>) {
 					f<CharT>(format % std::basic_string<CharT>(head.GetString()), tail...);
 #endif

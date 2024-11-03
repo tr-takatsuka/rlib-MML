@@ -3,6 +3,7 @@
 //#include <bits/stdc++.h>
 //#endif
 
+#include <array>
 #include <cstdint>
 #include <istream>
 #include <iostream>
@@ -148,120 +149,144 @@ Smf Smf::fromStream(std::istream& is)
 	smf.timeBase = headerChunk.division;
 
 	// トラックチャンク
-	for (size_t i = 0; i < headerChunk.trackCount; i++) {
-		const auto trackChunk = [&is]() {
-			Inner::TrackChunk c = Inner::read<decltype(c)>(is);
-			if (c.MTrk != Inner::TrackChunk().MTrk) {
-				throw std::runtime_error("MTrk chunk error");
-			}
-			Inner::changeEndian(c.dataLength);
-			return c;
-		}();
-
-		Smf::Track track;
-
-		std::uint64_t currentPosition = 0;		// 現在位置
-		uint8_t beforeStatus = 0;
-		for (const auto beginPosition = is.tellg(); is.tellg() - beginPosition < trackChunk.dataLength; ) {
-			auto readVariableValue = [&is] {					// 可変長数値を取得
-				return inner::readVariableValue([&] {return Inner::read<uint8_t>(is); });
-			};
-
-			currentPosition += readVariableValue();		// 現在位置 += デルタタイム
-
-			// status 読み込み
-			const auto status = [&] {
-				const uint8_t status = Inner::read<decltype(status)>(is);
-				if (!(status & 0x80)) {					// status 省略なら直前値を採用
-					is.seekg(-1, std::ios::cur);		// 位置を戻す
-					return beforeStatus;
+	std::exception_ptr ep;	// 例外保持
+	try {
+		for (size_t i = 0; i < headerChunk.trackCount; i++) {
+			const auto trackChunk = [&is]() {
+				Inner::TrackChunk c = Inner::read<decltype(c)>(is);
+				if (c.MTrk != Inner::TrackChunk().MTrk) {
+					throw std::runtime_error("MTrk chunk error.");
 				}
-				beforeStatus = status;
-				return status;
+				Inner::changeEndian(c.dataLength);
+				return c;
 			}();
 
-			switch (status & 0xf0) {
-			case EventNoteOff::statusByte: {
-				const std::array<uint8_t, 2> a = Inner::read<decltype(a)>(is);
-				track.events.emplace(currentPosition, std::make_shared<EventNoteOff>(status & 0xf, a[0] & 0x7f, a[1] & 0x7f));
-				break;
-			}
-			case EventNoteOn::statusByte: {
-				const std::array<uint8_t, 2> a = Inner::read<decltype(a)>(is);
-				track.events.emplace(currentPosition, std::make_shared<EventNoteOn>(status & 0xf, a[0] & 0x7f, a[1] & 0x7f));
-				break;
-			}
-			case EventPolyphonicKeyPressure::statusByte: {
-				const std::array<uint8_t, 2> a = Inner::read<decltype(a)>(is);
-				track.events.emplace(currentPosition, std::make_shared<EventPolyphonicKeyPressure>(status & 0xf, a[0] & 0x7f, a[1] & 0x7f));
-				break;
-			}
-			case EventControlChange::statusByte: {
-				const std::array<uint8_t, 2> a = Inner::read<decltype(a)>(is);
-				track.events.emplace(currentPosition, std::make_shared<EventControlChange>(status & 0xf, a[0] & 0x7f, a[1] & 0x7f));
-				break;
-			}
-			case EventProgramChange::statusByte: {
-				const uint8_t n = Inner::read<decltype(n)>(is);
-				track.events.emplace(currentPosition, std::make_shared<EventProgramChange>(status & 0xf, n & 0x7f));
-				break;
-			}
-			case EventPitchBend::statusByte: {
-				const std::array<uint8_t, 2> a = Inner::read<decltype(a)>(is);
-				const auto n = ((a[0] & 0x7f) + (a[1] & 0x7f) * 0x80) - 8192;
-				track.events.emplace(currentPosition, std::make_shared<EventPitchBend>(status & 0xf, n));
-				break;
-			}
-			case EventChannelPressure::statusByte: {
-				const uint8_t n = Inner::read<decltype(n)>(is);
-				track.events.emplace(currentPosition, std::make_shared<EventChannelPressure>(status & 0xf, n & 0x7f));
-				break;
-			}
-			default:
-				switch (status) {
-				case EventExclusive::statusByte: {
-					const auto size = readVariableValue();		// データ長
-					std::vector<uint8_t> data;
-					for (auto i = 0; i < size; i++) {
+			Smf::Track track;
+			try{
+				std::uint64_t currentPosition = 0;		// 現在位置
+				uint8_t beforeStatus = 0;
+				for (const auto beginPosition = is.tellg(); is.tellg() - beginPosition < trackChunk.dataLength; ) {
+					auto readVariableValue = [&is] {					// 可変長数値を取得
+						return inner::readVariableValue([&] {return Inner::read<uint8_t>(is); });
+					};
+
+					currentPosition += readVariableValue();		// 現在位置 += デルタタイム
+
+					// status 読み込み
+					const auto status = [&] {
+						const uint8_t status = Inner::read<decltype(status)>(is);
+						if (!(status & 0x80)) {					// status 省略なら直前値を採用
+							is.seekg(-1, std::ios::cur);		// 位置を戻す
+							return beforeStatus;
+						}
+						beforeStatus = status;
+						return status;
+					}();
+
+					switch (status & 0xf0) {
+					case EventNoteOff::statusByte: {
+						const std::array<uint8_t, 2> a = Inner::read<decltype(a)>(is);
+						track.events.emplace(currentPosition, std::make_shared<EventNoteOff>(status & 0xf, a[0] & 0x7f, a[1] & 0x7f));
+						break;
+					}
+					case EventNoteOn::statusByte: {
+						const std::array<uint8_t, 2> a = Inner::read<decltype(a)>(is);
+						track.events.emplace(currentPosition, std::make_shared<EventNoteOn>(status & 0xf, a[0] & 0x7f, a[1] & 0x7f));
+						break;
+					}
+					case EventPolyphonicKeyPressure::statusByte: {
+						const std::array<uint8_t, 2> a = Inner::read<decltype(a)>(is);
+						track.events.emplace(currentPosition, std::make_shared<EventPolyphonicKeyPressure>(status & 0xf, a[0] & 0x7f, a[1] & 0x7f));
+						break;
+					}
+					case EventControlChange::statusByte: {
+						const std::array<uint8_t, 2> a = Inner::read<decltype(a)>(is);
+						track.events.emplace(currentPosition, std::make_shared<EventControlChange>(status & 0xf, a[0] & 0x7f, a[1] & 0x7f));
+						break;
+					}
+					case EventProgramChange::statusByte: {
 						const uint8_t n = Inner::read<decltype(n)>(is);
-						if (n == 0xf7) {				// EOX(終了コード)
-							if(i != size - 1){				// ヘンなところで終わった？
-								throw std::runtime_error("exclusive size error");
+						track.events.emplace(currentPosition, std::make_shared<EventProgramChange>(status & 0xf, n & 0x7f));
+						break;
+					}
+					case EventPitchBend::statusByte: {
+						const std::array<uint8_t, 2> a = Inner::read<decltype(a)>(is);
+						const auto n = ((a[0] & 0x7f) + (a[1] & 0x7f) * 0x80) - 8192;
+						track.events.emplace(currentPosition, std::make_shared<EventPitchBend>(status & 0xf, n));
+						break;
+					}
+					case EventChannelPressure::statusByte: {
+						const uint8_t n = Inner::read<decltype(n)>(is);
+						track.events.emplace(currentPosition, std::make_shared<EventChannelPressure>(status & 0xf, n & 0x7f));
+						break;
+					}
+					default:
+						switch (status) {
+						case EventExclusive::statusByte: {
+							const auto size = readVariableValue();		// データ長
+							std::vector<uint8_t> data;
+							for (auto i = 0; i < size; i++) {
+								const uint8_t n = Inner::read<decltype(n)>(is);
+								if (n == 0xf7) {				// EOX(終了コード)
+									if (i != size - 1) {
+										// ヘンなところで終わった(が、エラーにはせず続行)
+										std::clog << "[warning] exclusive size error. EOX(0xf7) is failed position." << std::endl;	// throw std::runtime_error("exclusive size error");
+										break;
+									}
+									break;
+								}
+								if ((n & 0x80) != 0) {
+									// あるべきハズのEOX(0xf7)が無い(が、エラーにはせず続行)
+									std::clog << "[warning] exclusive data error. EOX(0xf7) is missing." << std::endl;
+									break;
+								}
+								data.push_back(n);
 							}
+							track.events.emplace(currentPosition, std::make_shared<EventExclusive>(std::move(data)));
 							break;
 						}
-						if ((n & 0x80) != 0) {
-							// あるべきハズのEOX(0xf7)が無い(が、エラーにはせず続行)
-							std::clog << "[warning] exclusive data error. EOX(0xf7) is missing." << std::endl;
+						case EventMeta::statusByte: {
+							const uint8_t type = Inner::read<decltype(type)>(is);					// イベントタイプ
+							const auto len = readVariableValue();									// データ長
+							std::vector<uint8_t> data(len);
+							if (const auto readed = is.read(reinterpret_cast<char*>(data.data()), data.size()).gcount(); readed < static_cast<std::intmax_t>(data.size())) {
+								data.resize(readed);
+								// データが足りない(が、エラーにはせず続行)
+								std::clog << "[warning] meta data size error." << std::endl;
+							}
+							track.events.emplace(currentPosition, std::make_shared<EventMeta>(static_cast<EventMeta::Type>(type), std::move(data)));
 							break;
 						}
-						data.push_back(n);
+						default:
+							assert(false);
+							break;
+						}
 					}
-					track.events.emplace(currentPosition, std::make_shared<EventExclusive>(std::move(data)));
-					break;
 				}
-				case EventMeta::statusByte: {
-					const uint8_t type = Inner::read<decltype(type)>(is);					// イベントタイプ
-					const auto len = readVariableValue();									// データ長
-					std::vector<uint8_t> data(len);
-					if (is.read(reinterpret_cast<char*>(data.data()), data.size()).gcount() < static_cast<std::intmax_t>(data.size())) {
-						throw std::runtime_error("size error");
-					}
-					track.events.emplace(currentPosition, std::make_shared<EventMeta>(static_cast<EventMeta::Type>(type), std::move(data)));
-					break;
+			} catch (...) {
+				if (track.events.size() > 0) {
+					smf.tracks.emplace_back(std::move(track));
 				}
-				default:
-					assert(false);
-					break;
-				}
+				throw;
 			}
-
+			smf.tracks.emplace_back(std::move(track));
 		}
-		smf.tracks.emplace_back(std::move(track));
-
+	} catch (...) {
+		ep = std::current_exception();
+	}
+	if (ep) {
+		try {
+			std::rethrow_exception(ep);
+		} catch (const std::exception& e) {
+			std::clog << "[warning] exception: " << e.what() << std::endl;
+		} catch (...) {
+			std::clog << "[warning] exception unknwon" << std::endl;
+		}
+		if (smf.tracks.size() <= 0) {	// トラックがまったくパースできてない状態なら
+			std::rethrow_exception(ep);	// throw で終了
+		}
 	}
 	return smf;
-
 }
 
 Smf Smf::convertTimebase(const Smf& smf, int timeBase) {

@@ -51,6 +51,10 @@ namespace rlib::sequencer {
 						auto& e = static_cast<const MmlCompiler::EventTempo&>(event);
 						track.events.insert(Smf::Event(e.position, std::make_shared<midi::EventMeta>(midi::EventMeta::createTempo(e.tempo))));
 					}},
+					{typeid(MmlCompiler::EventMeta), [](Smf::Track& track,const MmlCompiler::Port& port,const MmlCompiler::Event& event) {
+						auto& e = static_cast<const MmlCompiler::EventMeta&>(event);
+						track.events.insert(Smf::Event(e.position, std::make_shared<midi::EventMeta>(midi::EventMeta::createText(static_cast<midi::EventMeta::Type>(e.type), e.data))));
+					}},
 				};
 				const auto &ev = *event;
 				if (auto i = map.find(typeid(ev)); i != map.end()) {
