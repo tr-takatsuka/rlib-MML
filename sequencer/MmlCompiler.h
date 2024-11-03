@@ -21,6 +21,14 @@ namespace rlib::sequencer {
 			}
 		};
 
+		struct EventMeta : public Event {
+			uint8_t type = 0;
+			std::string	data;
+			virtual std::shared_ptr<Event> clone()const {
+				return std::make_shared<EventMeta>(*this);
+			}
+		};
+
 		struct EventProgramChange : public Event {
 			uint8_t	programNo = 0;
 			virtual std::shared_ptr<Event> clone()const {
@@ -120,6 +128,11 @@ namespace rlib::sequencer {
 				createSequenceNameError,		// CreateSequence コマンドの名前指定に誤りがあります
 				sequenceError,					// Sequence コマンドに誤りがあります
 				sequenceNameError,				// Sequence コマンドの名前指定に誤りがあります
+				metaError,						// Meta コマンドに誤りがあります
+				metaTypeError,					// Meta コマンドの type の指定に誤りがあります
+				definePresetFMError,			// DefinePresetFM コマンドに誤りがあります
+				definePresetFMNoError,			// DefinePresetFM コマンドのプログラムナンバー指定に誤りがあります
+				definePresetFMRangeError,		// DefinePresetFM コマンドの値が範囲外です
 				unknownError,					// 解析出来ない書式です
 				stdEexceptionError,				// std::excption エラーです
 			};

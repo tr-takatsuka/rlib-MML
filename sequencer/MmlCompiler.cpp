@@ -6,12 +6,15 @@
 #include <charconv>
 #include <variant>
 #include <optional>
+#include <iostream>
 
 #include <boost/lexical_cast.hpp>
 #include <boost/regex.hpp>
 
+#include "../json/Json.h"
+
 #include "./MmlCompiler.h"
-#include "../stringformat/StringFormat.h"
+#include "./MidiEvent.h"
 
 using namespace rlib;
 using namespace rlib::sequencer;
@@ -56,6 +59,11 @@ std::string MmlCompiler::Exception::getMessage(Code code) {
 		{Code::createSequenceNameError,			u8R"(CreateSequence コマンドの名前指定に誤りがあります)" },
 		{Code::sequenceError,					u8R"(Sequence コマンドに誤りがあります)" },
 		{Code::sequenceNameError,				u8R"(Sequence コマンドの名前指定に誤りがあります)" },
+		{Code::metaError,						u8R"(Meta コマンドに誤りがあります)" },
+		{Code::metaTypeError,					u8R"(Meta コマンドの type の指定に誤りがあります)" },
+		{Code::definePresetFMError,				u8R"(DefinePresetFM コマンドに誤りがあります)" },
+		{Code::definePresetFMNoError,			u8R"(DefinePresetFM コマンドのプログラムナンバー指定に誤りがあります)" },
+		{Code::definePresetFMRangeError,		u8R"(DefinePresetFM コマンドの値が範囲外です)" },
 		{Code::unknownError,					u8R"(解析出来ない書式です)"},
 		{Code::stdEexceptionError,				u8R"(std::excption エラーです)"},
 	};
@@ -84,15 +92,15 @@ std::optional<boost::smatch> regexSearch(const std::string::const_iterator& iBeg
 using PairIterator = std::pair<std::string::const_iterator, std::string::const_iterator>;
 
 // std::string::const_iteratorをポインタに変換 (TODO: std::to_address に差し替えたい)
-const std::pair<const char*, const char*> toAddress(const std::string::const_iterator& iBegin, const std::string::const_iterator& iEnd) {
-	const size_t size = iEnd - iBegin;
+template <typename T> const std::pair<const char*, const char*> toAddress(const T& iBegin, const T& iEnd) {
+	const size_t size = std::distance(iBegin, iEnd);//iEnd - iBegin;
 	if (size == 0) return { nullptr,nullptr };
 	auto p = &(*iBegin);
 	return { p,p + size };
 }
 
-// 文字列の先頭を比較
-std::optional<std::string::const_iterator> isStartsWith(const std::string::const_iterator& iBegin, const std::string::const_iterator& iEnd, const std::string& s) {
+// 文字列の前方一致比較
+template <typename T> std::optional<T> isStartsWith(const T& iBegin, const T& iEnd, const std::string& s) {
 	if (static_cast<size_t>(iEnd - iBegin) >= s.size() && std::equal(s.cbegin(), s.cend(), iBegin)) {
 		return iBegin + s.size();
 	}
@@ -105,7 +113,7 @@ auto parseString(const std::string::const_iterator& iBegin, const std::string::c
 		std::string::const_iterator	next;					// 次の位置
 		std::optional<PairIterator>	parsedString;			// パースした文字列(nullの場合はパースエラー)
 	};
-	if (iBegin == iEnd) std::optional<Result>();
+	if (iBegin == iEnd) return std::optional<Result>();
 	std::optional<Result> result({ iBegin });
 	if (*iBegin == '"') {									// "・・・" 形式の文字列
 		auto i = std::find(iBegin + 1, iEnd, '"');				// 終端を検索
@@ -169,19 +177,44 @@ auto parseInt(const std::string::const_iterator& iBegin, const std::string::cons
 		std::string::const_iterator			next;
 		std::variant<intmax_t, uintmax_t>	value;	// 正数:uintmax_t 負数:intmax_t +○○:intmax_t
 	}result;
-	if (iBegin == iEnd) return std::optional<decltype(result)>();
-	const auto [begin, end] = toAddress(iBegin, iEnd);
-	bool const plus = *iBegin == '+';
-	const auto begin2 = begin + (plus ? 1 : 0);
-	intmax_t value;
-	const auto [ptr, ec] = std::from_chars(begin2, end, value);
+	std::string::const_iterator it = iBegin;
+
+	// 16進数
+	if (auto r = isStartsWith(it, iEnd, "0x")) {
+		it = *r;
+		const auto [pBegin, pEnd] = toAddress(it, iEnd);
+		uintmax_t value;
+		const auto [ptr, ec] = std::from_chars(pBegin, pEnd, value, 16);
+		if (ec != std::errc{}) return std::optional<decltype(result)>();
+		result.value = value;
+		result.next = iBegin + (ptr - &(*iBegin));
+		return std::optional(result);
+	}
+
+	if (it == iEnd) return std::optional<decltype(result)>();
+	const int sign = [&] {
+		if (*it == '-') {
+			it++;
+			return -1;
+		}
+		if (*it == '+') {
+			it++;
+			return +1;
+		}
+		return 0;
+	}();
+	const auto [pBegin, pEnd] = toAddress(it, iEnd);
+	uintmax_t value;
+	const auto [ptr, ec] = std::from_chars(pBegin, pEnd, value, 10);
 	if (ec != std::errc{}) return std::optional<decltype(result)>();
-	if (value < 0 || plus) {
+	if (sign < 0) {
+		result.value = -static_cast<intmax_t>(value);
+	} else if (sign > 0) {
 		result.value = static_cast<intmax_t>(value);
 	} else {
 		result.value = static_cast<uintmax_t>(value);
 	}
-	result.next = iBegin + (ptr - begin);
+	result.next = iBegin + (ptr - &(*iBegin));
 	return std::optional(result);
 }
 
@@ -211,32 +244,49 @@ auto parseDouble(const std::string::const_iterator& iBegin, const std::string::c
 
 // 関数解析
 struct ParseFunctionResult {
-	PairIterator						functionName;		// 関数名
-	std::string::const_iterator			next;				// 次の位置
-	std::map<std::string, MmlCompiler::Util::Word>	args;	// 引数リスト
+	PairIterator									functionName;		// 関数名
+	std::string::const_iterator						next;				// 次の位置
+	std::vector<MmlCompiler::Util::Word>			argsList;			// 引数リスト(名前ナシ連番)
+	std::map<std::string, MmlCompiler::Util::Word>	argsName;			// 引数リスト(名前アリ)
 
 	template <typename T> std::optional<T> findArg(const std::string& name)const {
-		if (auto i = args.find(name); i != args.end()) {
-			if (std::holds_alternative<T>(i->second)) {
-				return std::get<T>(i->second);
-			}
+		if (auto i = argsName.find(name); i != argsName.end() && std::holds_alternative<T>(i->second)) {
+			return std::get<T>(i->second);
+		}
+		return std::nullopt;
+	}
+	template <typename T> std::optional<T> findArg(size_t index)const {
+		if (argsList.size() > index && std::holds_alternative<T>(argsList[index])) {
+			return std::get<T>(argsList[index]);
 		}
 		return std::nullopt;
 	}
 
-	std::optional<std::string> findArgString(const std::string& name)const {
+	template <typename T> std::optional<std::string> findArgString(const T& name)const {
 		if (auto r = findArg<PairIterator>(name)) {
 			return std::string(r->first, r->second);
 		}
 		return std::nullopt;
 	}
+
+	template <typename T> std::optional<std::intmax_t> findArgInt(const T& name)const {
+		if (auto r = findArg<std::intmax_t>(name)) {
+			return r;
+		}
+		if (auto r = findArg<std::uintmax_t>(name)) {
+			return r;
+		}
+		return std::nullopt;
+	}
+
 };
 
 auto parseFunction(
 	const std::string::const_iterator& iBegin,
 	const std::string::const_iterator& iEnd,
-	const std::vector<std::string>& functionNames,
-	const std::set<std::string>& argNames		// 引数名(ココにない引数名はエラー)
+	const std::vector<std::string>& functionNames,				// 関数名
+	const std::set<std::string>& argNames,						// 名前付き引数名(ココにない引数名はエラー)
+	const size_t argCount = (std::numeric_limits<size_t>::max)()	// 名前ナシ引数数(ココを超える数の引数はエラー)
 ) {
 	std::optional<ParseFunctionResult> result = ParseFunctionResult();
 
@@ -258,7 +308,6 @@ auto parseFunction(
 	}();
 	if (!func) return decltype(result)();		// 該当しなかった
 
-	std::vector<MmlCompiler::Util::Word> nonameArgs;	// 名前ナシ引数
 	std::string currentArgName;
 	union {									// 次トークン情報
 		struct {
@@ -279,9 +328,6 @@ auto parseFunction(
 		if (it == iEnd) break;
 
 		if (flags.rightParen && *it == ')') {		// )
-			for (size_t i = 0; i < nonameArgs.size(); i++) {
-				result->args[boost::lexical_cast<std::string>(i)] = nonameArgs[i];
-			}
 			result->next = it + 1;						// 次の位置
 			return result;								// 正常終了
 		}
@@ -320,9 +366,12 @@ auto parseFunction(
 				}
 				it = r->next;
 				if (currentArgName.empty()) {
-					nonameArgs.emplace_back(std::move(*r->word));
+					result->argsList.emplace_back(std::move(*r->word));
+					if (result->argsList.size() > argCount) {
+						throw MmlCompiler::Exception(MmlCompiler::Exception::Code::argumentError, it, iEnd);	// 引数が多すぎる
+					}
 				} else {
-					result->args[currentArgName] = std::move(*r->word);
+					result->argsName[currentArgName] = std::move(*r->word);
 					currentArgName.clear();
 				}
 				flags.all = 0;
@@ -561,7 +610,7 @@ public:
 
 		const auto parseSequence = [&state, &sequences](const iterator& begin, const iterator& end)->std::optional<iterator> {
 			if (auto r = parseFunction(begin, end, { "Seq","Sequence" }, { "length" })) {
-				const auto name = (*r).findArgString("0").value_or("");
+				const auto name = (*r).findArgString(0).value_or("");
 				if (name.empty()) {
 					throw Exception(Exception::Code::sequenceNameError, begin, end);
 				}
@@ -633,7 +682,7 @@ public:
 
 		const auto parsePort = [&state](const iterator& begin, const iterator& end)->std::optional<iterator> {
 			if (auto r = parseFunction(begin, end, { "Port","port" }, {})) {		// Port
-				const auto name = (*r).findArgString("0").value_or("");
+				const auto name = (*r).findArgString(0).value_or("");
 				if (name.empty()) {
 					throw Exception(Exception::Code::portNameError, begin, end);
 				}
@@ -649,10 +698,10 @@ public:
 		const auto parseVolume = [&state](const iterator& begin, const iterator& end)->std::optional<iterator> {
 			if (auto r = parseFunction(begin, end, { "V","Volume","volume" }, {})) {		// Volume
 				auto& port = *state.currentPort;
-				if (const auto v = r->findArg<intmax_t>("0")) {	// 符号付なら相対指定
+				if (const auto v = r->findArg<intmax_t>(0)) {	// 符号付なら相対指定
 					const intmax_t n = port.volume + *v;
 					port.volume = static_cast<decltype(port.volume)>(std::min<decltype(n)>(std::max<decltype(n)>(n, 0), 127));
-				} else if (const auto v = r->findArg<uintmax_t>("0")) {	//  符号ナシなら絶対指定
+				} else if (const auto v = r->findArg<uintmax_t>(0)) {	//  符号ナシなら絶対指定
 					if (*v < 0 || *v > 127) {
 						throw Exception(Exception::Code::volumeRangeError, begin, end);
 					}
@@ -672,10 +721,10 @@ public:
 		const auto parsePan = [&state](const iterator& begin, const iterator& end)->std::optional<iterator> {
 			if (auto r = parseFunction(begin, end, { "Pan","pan" }, {})) {		// Pan
 				auto& port = *state.currentPort;
-				if (const auto v = r->findArg<intmax_t>("0")) {	// 符号付なら相対指定
+				if (const auto v = r->findArg<intmax_t>(0)) {	// 符号付なら相対指定
 					const intmax_t n = port.pan + *v;
 					port.pan = static_cast<decltype(port.pan)>(std::min<decltype(n)>(std::max<decltype(n)>(n, 0), 127));
-				} else if (const auto v = r->findArg<uintmax_t>("0")) {	//  符号ナシなら絶対指定
+				} else if (const auto v = r->findArg<uintmax_t>(0)) {	//  符号ナシなら絶対指定
 					if (*v < 0 || *v > 127) {
 						throw Exception(Exception::Code::panRangeError, begin, end);
 					}
@@ -694,18 +743,15 @@ public:
 
 		const auto parsePitchBend = [&state](const iterator& begin, const iterator& end)->std::optional<iterator> {
 			if (auto r = parseFunction(begin, end, { "PitchBend","pitchBend" }, {})) {		// PitchBend
-				const auto v = [&]()->intmax_t {
-					if (const auto v = r->findArg<intmax_t>("0")) return *v;
-					if (const auto v = r->findArg<uintmax_t>("0")) return *v;
-					throw Exception(Exception::Code::pitchBendError, begin, end);
-				}();
+				const auto v = r->findArgInt(0);
+				if (!v) throw Exception(Exception::Code::pitchBendError, begin, end);
 				auto& port = *state.currentPort;
-				if (v < -8192 || v > 8191) {
+				if (*v < -8192 || *v > 8191) {
 					throw Exception(Exception::Code::pitchBendRangeError, begin, end);
 				}
 				auto e = std::make_shared<EventPitchBend>();
 				e->position = port.position;
-				e->pitchBend = static_cast<decltype(e->pitchBend)>(v);
+				e->pitchBend = static_cast<decltype(e->pitchBend)>(*v);
 				port.port.eventList.insert(e);
 				return r->next;
 			}
@@ -715,12 +761,12 @@ public:
 		const auto parseControlChange = [&state](const iterator& begin, const iterator& end)->std::optional<iterator> {
 			if (auto r = parseFunction(begin, end, { "CC","ControlChange","controlChange" }, { "no","value" })) {		// ControlChange
 				const auto no = [&] {
-					if (auto v = r->findArg<uintmax_t>("0")) return *v;
+					if (auto v = r->findArg<uintmax_t>(0)) return *v;
 					if (auto v = r->findArg<uintmax_t>("no")) return *v;
 					throw Exception(Exception::Code::controlChangeError, begin, end);
 				}();
 				const auto val = [&] {
-					if (auto v = r->findArg<uintmax_t>("1")) return *v;
+					if (auto v = r->findArg<uintmax_t>(1)) return *v;
 					if (auto v = r->findArg<uintmax_t>("value")) return *v;
 					throw Exception(Exception::Code::controlChangeError, begin, end);
 				}();
@@ -861,6 +907,95 @@ public:
 			return std::nullopt;
 		};
 
+		// メタイベント
+		const auto parseMeta = [&state](const iterator& begin, const iterator& end)->std::optional<iterator> {
+			if (auto r = parseFunction(begin, end, { "Meta" }, { "type" })) {
+				const auto type = (*r).findArgInt("type");
+				if (!type || *type < 0 || *type > std::numeric_limits<uint8_t>::max()) {
+					throw Exception(Exception::Code::metaTypeError, begin, end);
+				}
+				auto& port = *state.currentPort;
+
+				auto e = std::make_shared<EventMeta>();
+				e->type = static_cast<decltype(e->type)>(*type);
+				e->position = port.position;
+
+				for (auto& arg : r->argsList) {
+					if (std::holds_alternative<uintmax_t>(arg)) {
+						auto n = std::get<uintmax_t>(arg);
+						if (n > std::numeric_limits<uint8_t>::max()) {
+							throw Exception(Exception::Code::metaTypeError, begin, end);
+						}
+						e->data.push_back(static_cast<uint8_t>(n));
+					}else if (std::holds_alternative<intmax_t>(arg)) {
+						auto n = std::get<intmax_t>(arg);
+						if (n <std::numeric_limits<uint8_t>::min() || n > std::numeric_limits<uint8_t>::max()) {
+							throw Exception(Exception::Code::metaTypeError, begin, end);
+						}
+						e->data.push_back(static_cast<int8_t>(n));
+					} else if (std::holds_alternative<PairIterator>(arg)) {
+						auto n = std::get<PairIterator>(arg);
+						e->data.append(n.first, n.second);
+					} else {
+						throw Exception(Exception::Code::metaTypeError, begin, end);	// failsafe
+					}
+				}
+
+				port.port.eventList.insert(e);
+				return r->next;
+			}
+			return std::nullopt;
+		};
+
+
+		// FM音色定義 (rlib-MML 固有メタイベント)
+		const auto parseDefinePresetFM = [&state](const iterator& begin, const iterator& end)->std::optional<iterator> {
+			if (auto r = parseFunction(begin, end, { "DefinePresetFM" }, {"no","name" }, 38)) {
+				const auto no = (*r).findArgInt("no");
+				if (!no || *no < 0 || *no>127) {
+					throw Exception(Exception::Code::definePresetFMNoError, begin, end);
+				}
+				const auto name = (*r).findArgString("name").value_or("");
+
+				static constexpr std::array maxTable = {
+					//  AR  DR  SR  RR  SL  TL KS  ML DT
+						31, 31, 31, 15, 15,127, 3, 15, 7,
+						31, 31, 31, 15, 15,127, 3, 15, 7,
+						31, 31, 31, 15, 15,127, 3, 15, 7,
+						31, 31, 31, 15, 15,127, 3, 15, 7,
+						7,	7,	//  AL  FB
+				};
+				Json::Array parameter;
+				for (size_t i = 0; i < maxTable.size(); i++) {
+					const auto n = (*r).findArgInt(i);
+					if (!n) throw Exception(Exception::Code::definePresetFMError, begin, end);
+					if (*n<0 || *n> maxTable[i] ) throw Exception(Exception::Code::definePresetFMRangeError, begin, end);
+					parameter.push_back(*n);
+				}
+
+				const Json j = Json::Map{
+					{"rlib-MML", Json::Map{
+						{"fm4op", Json::Map{
+							{std::to_string(*no), Json::Map{
+								{"name", name},
+								{"reg", parameter},
+							}},
+						}},
+					}},
+				};
+
+				auto& port = *state.currentPort;
+				auto e = std::make_shared<EventMeta>();
+				e->type = static_cast<decltype(e->type)>(midi::EventMeta::Type::sequencerLocal);
+				e->position = port.position;
+				e->data = j.stringify();
+				auto it = port.port.eventList.insert(e);
+
+				return r->next;
+			}
+			return std::nullopt;
+		};
+
 		const std::initializer_list<
 			std::pair<std::function<std::optional<iterator>(const iterator&, const iterator&)>, Exception::Code>
 		> funcs = {
@@ -882,6 +1017,8 @@ public:
 			{parseVelocity,			Exception::Code::vCommandError},			// v? ベロシティ
 			{parseCreateSequence,	Exception::Code::createSequenceError},		// CreateSequence
 			{parseSequence,			Exception::Code::sequenceError},			// Sequence
+			{parseMeta,				Exception::Code::metaError},				// Meta
+			{parseDefinePresetFM,	Exception::Code::definePresetFMError}		// DefinePresetFM
 		};
 
 		for (auto it = iBegin; true;) {
@@ -1033,8 +1170,42 @@ void MmlCompiler::unitTest() {
 	std::string s("1.5e5 is pi");
 	auto a = parseDouble(s.begin(),s.end());
 
-	std::string s1("+1.1e5 is pi");
-	auto a1 = parseInt(s1.begin(), s1.end());
+	{// parseInt
+		std::cout << "parseInt" << std::endl;
+		struct {
+			std::string text;
+			std::pair < size_t, std::variant<intmax_t, uintmax_t>> result;
+		}static const tbl[] = {
+			{"",			{0,static_cast<uintmax_t>(0)}},
+			{"+",			{0,static_cast<uintmax_t>(0)}},
+			{"-",			{0,static_cast<uintmax_t>(0)}},
+			{"0",			{1,static_cast<uintmax_t>(0)}},
+			{"-0.",			{2,static_cast<intmax_t>(0)}},
+			{"1.2",			{1,static_cast<uintmax_t>(1)}},
+			{"2e1.2",		{1,static_cast<uintmax_t>(2)}},
+			{"+3e1.2",		{2,static_cast<intmax_t>(3)}},
+			{"-4e1.2",		{2,static_cast<intmax_t>(-4)}},
+			{"0x3a1.e1.2",	{5,static_cast<uintmax_t>(0x3a1)}},
+			{"+0x3e1.2",	{2,static_cast<intmax_t>(0)}},
+			{"0x",			{0,static_cast<intmax_t>(0)}},
+			{"+x",			{0,static_cast<intmax_t>(0)}},
+			{"++0",			{0,static_cast<intmax_t>(0)}},
+			{"--1",			{0,static_cast<intmax_t>(0)}},
+			{"+-1",			{0,static_cast<intmax_t>(0)}},
+			{"-.",			{0,static_cast<intmax_t>(0)}},
+		};
+		for (auto &t : tbl) {
+			std::cout << t.text << std::endl;
+			auto r = parseInt(t.text.begin(), t.text.end());
+			if (t.result.first == 0) {
+				assert(!r);
+			} else {
+				assert(r->value == t.result.second);
+				assert(t.result.first == std::distance(t.text.begin(), r->next));
+			}
+		}
+	}
+
 
 	{
 		static const std::initializer_list<std::pair<std::string, size_t>> list = {

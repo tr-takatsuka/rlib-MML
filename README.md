@@ -59,15 +59,16 @@ Experimental WebAssembly support is also available.
 
 |  notation  |  description  |example|
 | ---- | ---- | ---- |
-|createPort(<br>&emsp;name:[port name],<br>&emsp;instrument:[instrument name]\(optional),<br>&emsp;channel:[channel number],<br>)| Define (declare) the port<br>Channel numbers are 1-16.|"createPort(name:Piano, channel:3)" <br>→ Declare the port of MIDI channel 3 with the name "Piano".<br>instrument specifies the name of the instrument. If omitted, the default instrument is used.|
-|port([port name])| It is port switching|"port(Piano) cde"  → CDE at Port "Piano"|
+|CreatePort(<br>&emsp;name:[port name],<br>&emsp;instrument:[instrument name]\(optional),<br>&emsp;channel:[channel number],<br>)| Define (declare) the port<br>Channel numbers are 1-16.|"createPort(name:Piano, channel:3)" <br>→ Declare the port of MIDI channel 3 with the name "Piano".<br>instrument specifies the name of the instrument. If omitted, the default instrument is used.|
+|Port([port name])| It is port switching|"port(Piano) cde"  → CDE at Port "Piano"|
 |V([volume value])<br>ailias: volume|The volume. Values ​​are 0-127.| "V(120) cde"  → CDE at Volume 120.|
-|pan([pan value])<br>ailias: panpot|It is pan (panpot).<br>Values ​​range from 0 (far left) to 127 (far right), with 64 in the center.| "pan(0) cde"  → CDE at Pan 0 (far left).|
+|Pan([pan value])<br>ailias: panpot|It is pan (panpot).<br>Values ​​range from 0 (far left) to 127 (far right), with 64 in the center.| "pan(0) cde"  → CDE at Pan 0 (far left).|
 |PitchBend([value])| Pitch bend.<br>Values range from -8192 (two notes down) to 8191 (two notes up), with the centre at 0.| "PitchBend(-4096) cde Pan(0) cde"<br>→ CDE lowered by a semitone and normal CDE.|
 |CC([contorl change no],[value])<br>ailias: ContorlChange| Contorl change.<br>The first argument is the control number and the first argument is the value| "CC(0,10)CC(32,130)@2" Bank-selected programme change.|
 |CreateSequence(<br>&emsp;name:[sequence name],<br>&emsp;mml:[MML],<br>)|Defined Sequence(sub Sequence).<br>Define songs (MML) as parts and call them in subsequent MMLs.| // Defined rhythm pattern<br/>CreateSequence(name:drum, mml:"<br/>&emsp;CreatePort(name:kick, channel:10) l8 o1 c^^c ^c^^<br/>&emsp;CreatePort(name:snare, channel:10) l8 o1 ^^d^ ^^d^<br/>")|
-|Seq([sequence name],length:[length(optional)])<br>ailias Sequence|Calls a predefined sequence (sub-sequence).| // Defined rhythmic pattern is repeated three times.<br>// Only half-note minutes are used for the third round of the sequence.<br/>Seq(drum) Seq(drum) Seq(drum,length:2)|
-
+|Seq(<br>&emsp;[sequence name],<br>&emsp;length:[length(optional)]<br>)<br>ailias Sequence|Calls a predefined sequence (sub-sequence).| // Defined rhythmic pattern is repeated three times.<br>// Only half-note minutes are used for the third round of the sequence.<br/>Seq(drum) Seq(drum) Seq(drum,length:2)|
+|Meta(<br>&emsp;type:[event type],<br>&emsp;[data]...<br>)|Meta Event.<br>type specifies the event type.<br>Specify data with a variable-length argument with no name. It is not necessary to describe the data length.| // title info<br/>Meta(type:0x1,"The Lost King's Scepter")<br>// SMPTE offset<br>Meta(type:0x54,96,0,0,0,0)|
+|DefinePresetFM(<br>&emsp;no:[program no],<br>&emsp;name:[name],<br>&emsp;[data]...<br>)|Sequencer specific meta event that defines FM sound tone in rlib-MML.|DefinePresetFM(no:4,name:"piano",<br>// AR  DR  SR  RR  SL  TL KS  ML DT<br>   29,  8,  0,  8,  3, 31, 2,  1, 3,<br>   31,  3,  1,  6, 10,  0, 0,  2, 7,<br>   29, 20,  0,  9,  2, 44, 0,  4, 2,<br>   31,  7,  2,  6,  6,  0, 0,  1, 5,<br>// AL  FB<br>    4,  7,<br>)|
 ## string
 
 Where a string is specified, the following formats can be used.
