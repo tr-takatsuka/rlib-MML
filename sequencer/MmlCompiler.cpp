@@ -61,6 +61,10 @@ std::string MmlCompiler::Exception::getMessage(Code code) {
 		{Code::sequenceNameError,				u8R"(Sequence コマンドの名前指定に誤りがあります)" },
 		{Code::metaError,						u8R"(Meta コマンドに誤りがあります)" },
 		{Code::metaTypeError,					u8R"(Meta コマンドの type の指定に誤りがあります)" },
+		{Code::fineTuneError,					u8R"(FineTune コマンドの指定に誤りがあります)" },
+		{Code::fineTuneRangeError,				u8R"(FineTune コマンドの値が範囲外です)" },
+		{Code::coarseTuneError,					u8R"(CoarseTune コマンドの指定に誤りがあります)" },
+		{Code::coarseTuneRangeError,			u8R"(CoarseTune コマンドの値が範囲外です)" },
 		{Code::definePresetFMError,				u8R"(DefinePresetFM コマンドに誤りがあります)" },
 		{Code::definePresetFMNoError,			u8R"(DefinePresetFM コマンドのプログラムナンバー指定に誤りがあります)" },
 		{Code::definePresetFMRangeError,		u8R"(DefinePresetFM コマンドの値が範囲外です)" },
@@ -278,6 +282,21 @@ struct ParseFunctionResult {
 		}
 		return std::nullopt;
 	}
+
+	// 整数でも浮動小数でも有効とする
+	template <typename T> std::optional<double> findArgNumber(const T& name)const {
+		if (auto r = findArg<std::intmax_t>(name)) {
+			return r;
+		}
+		if (auto r = findArg<std::uintmax_t>(name)) {
+			return r;
+		}
+		if (auto r = findArg<double>(name)) {
+			return r;
+		}
+		return std::nullopt;
+	}
+
 
 };
 
@@ -777,7 +796,7 @@ public:
 				auto e = std::make_shared<EventControlChange>();
 				e->position = port.position;
 				e->no = static_cast<decltype(e->no)>(no);
-				e->value = static_cast<decltype(e->no)>(val);
+				e->value = static_cast<decltype(e->value)>(val);
 				port.port.eventList.insert(e);
 				return r->next;
 			}
@@ -947,6 +966,74 @@ public:
 			return std::nullopt;
 		};
 
+		// FineTune
+		const auto parseFineTune = [&state](const iterator& begin, const iterator& end)->std::optional<iterator> {
+			if (auto r = parseFunction(begin, end, { "FineTune" }, {})) {
+				const auto v = r->findArgNumber(0);
+				if (!v) throw Exception(Exception::Code::fineTuneError, begin, end);
+				auto& port = *state.currentPort;
+
+				constexpr double inMin = -100.0;
+				constexpr double inMax = 100.0;
+				if (*v < inMin || *v > inMax) {
+					throw Exception(Exception::Code::fineTuneRangeError, begin, end);
+				}
+				constexpr int outMax = 16383;
+				const auto n = static_cast<int>(std::round((*v - inMin) * outMax / (inMax - inMin)));
+				const auto raw = std::clamp(n, 0, outMax);
+
+				struct {
+					midi::EventControlChange::Type no;
+					uint8_t val;
+				}const tbl[] = {
+					{midi::EventControlChange::Type::rpnMSB,		static_cast<uint16_t>(midi::EventControlChange::RpnType::fineTune) / 0x80 & 0x7f	},
+					{midi::EventControlChange::Type::rpnLSB,		static_cast<uint16_t>(midi::EventControlChange::RpnType::fineTune) & 0x7f	},
+					{midi::EventControlChange::Type::dataEntryMSB,	static_cast<uint8_t>(raw / 0x80 & 0x7f)	},
+					{midi::EventControlChange::Type::dataEntryLSB,	static_cast<uint8_t>(raw & 0x7f)	},
+				};
+				for (auto& t : tbl) {
+					auto e = std::make_shared<EventControlChange>();
+					e->position = port.position;
+					e->no = static_cast<decltype(e->no)>(t.no);
+					e->value = t.val;
+					port.port.eventList.insert(e);
+				}
+				return r->next;
+			}
+			return std::nullopt;
+		};
+
+		// CoarseTune
+		const auto parseCoarseTune = [&state](const iterator& begin, const iterator& end)->std::optional<iterator> {
+			if (auto r = parseFunction(begin, end, { "CoarseTune" }, {})) {
+				const auto v = r->findArgInt(0);
+				if (!v) throw Exception(Exception::Code::coarseTuneError, begin, end);
+				auto& port = *state.currentPort;
+				if (*v < -64 || *v > 63) {
+					throw Exception(Exception::Code::coarseTuneRangeError, begin, end);
+				}
+				struct {
+					midi::EventControlChange::Type no;
+					uint8_t val;
+				}const tbl[] = {
+					{midi::EventControlChange::Type::rpnMSB,		static_cast<uint16_t>(midi::EventControlChange::RpnType::coarseTune) / 0x80 & 0x7f	},
+					{midi::EventControlChange::Type::rpnLSB,		static_cast<uint16_t>(midi::EventControlChange::RpnType::coarseTune) & 0x7f	},
+					{midi::EventControlChange::Type::dataEntryMSB,	static_cast<uint8_t>((*v + 64) & 0x7f)	},
+					{midi::EventControlChange::Type::dataEntryLSB,	0	},
+				};
+				for (auto& t : tbl) {
+					auto e = std::make_shared<EventControlChange>();
+					e->position = port.position;
+					e->no = static_cast<decltype(e->no)>(t.no);
+					e->value = t.val;
+					port.port.eventList.insert(e);
+				}
+				return r->next;
+			}
+			return std::nullopt;
+			};
+
+
 
 		// FM音色定義 (rlib-MML 固有メタイベント)
 		const auto parseDefinePresetFM = [&state](const iterator& begin, const iterator& end)->std::optional<iterator> {
@@ -1018,6 +1105,8 @@ public:
 			{parseCreateSequence,	Exception::Code::createSequenceError},		// CreateSequence
 			{parseSequence,			Exception::Code::sequenceError},			// Sequence
 			{parseMeta,				Exception::Code::metaError},				// Meta
+			{parseFineTune,			Exception::Code::fineTuneError},			// FineTune
+			{parseCoarseTune,		Exception::Code::coarseTuneError},			// CoarseTune
 			{parseDefinePresetFM,	Exception::Code::definePresetFMError}		// DefinePresetFM
 		};
 
