@@ -141,9 +141,17 @@ namespace rlib::midi {
 			expression = 11,
 			bankSelectLSB = 32,
 			dataEntryLSB = 38,
+			nrpnLSB = 98,
+			nrpnMSB = 99,
 			rpnLSB = 100,
 			rpnMSB = 101,
 		};
+		enum class RpnType {
+			pitchBendRange = 0 * 0x80 + 0,
+			fineTune = 0 * 0x80 + 1,
+			coarseTune = 0 * 0x80 + 2,
+		};
+
 		const Type		type = static_cast<Type>(0);
 		const uint8_t	value = 0;
 		EventControlChange(uint8_t channel, Type type_, uint8_t value_)

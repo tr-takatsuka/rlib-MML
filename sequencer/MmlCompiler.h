@@ -130,6 +130,10 @@ namespace rlib::sequencer {
 				sequenceNameError,				// Sequence コマンドの名前指定に誤りがあります
 				metaError,						// Meta コマンドに誤りがあります
 				metaTypeError,					// Meta コマンドの type の指定に誤りがあります
+				fineTuneError,					// FineTune コマンドに誤りがあります
+				fineTuneRangeError,				// FineTune コマンドの値が範囲外です
+				coarseTuneError,				// CoarseTune コマンドに誤りがあります
+				coarseTuneRangeError,			// CoarseTune コマンドの値が範囲外です
 				definePresetFMError,			// DefinePresetFM コマンドに誤りがあります
 				definePresetFMNoError,			// DefinePresetFM コマンドのプログラムナンバー指定に誤りがあります
 				definePresetFMRangeError,		// DefinePresetFM コマンドの値が範囲外です
