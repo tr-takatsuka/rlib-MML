@@ -27,11 +27,11 @@ emscripten::val mmlToSmf(const std::string& mml) {
 			ret.set("result", emscripten::val::global("Uint8Array").new_(emscripten::typed_memory_view(s.size(), s.data())));
 			ret.set("ok", true);
 		} catch (const rlib::sequencer::MmlCompiler::Exception& e) {
-			const size_t lineNumber = [&] {	// 行番号取得
+			const size_t lineNumber = [&] {		// 行番号取得
 				static const std::regex re(R"(\r\n|\n|\r)");
-				size_t lf = 0;
-				for (auto i = std::sregex_token_iterator(mml.cbegin(), e.it, re, -1); i != std::sregex_token_iterator(); i++) lf++;
-				return lf;
+				auto i = std::sregex_iterator(mml.cbegin(), e.it, re);
+				size_t lf = std::distance(i, std::sregex_iterator()); // 改行の数
+				return lf + 1;
 			}();
 			const auto msg = rlib::sequencer::MmlCompiler::Exception::getMessage(e.code);	// エラーメッセージ取得
 			auto errorWord = [&] {

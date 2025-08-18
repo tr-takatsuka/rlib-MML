@@ -65,7 +65,7 @@ C++17 環境でコンパイルできます。ビルドには boost が必要で�
 |PitchBend([ベンド値])| ピッチベンドです。<br>値は -8192(2音下)～8191(2音上)で、中央は0です。| "PitchBend(-4096) cde Pan(0) cde"<br>→ 半音下げたドレミと通常のドレミです|
 |CC([コントロール番号],[値])<br>別名 ContorlChange| コントロールチェンジです。<br>第1引数がコントロール番号、第1引数が値です| "CC(0,10)CC(32,130)@2" バンクセレクトしたプログラムチェンジです。|
 |CreateSequence(<br>&emsp;name:[シーケンス名],<br>&emsp;mml:[MML],<br>)|シーケンス(サブシーケンス)を定義します。<br>楽曲(MML)を部品として定義し、以降のMMLの中で呼び出す(張り付ける)ことができます。| // ドラムパターンを定義します<br/>CreateSequence(name:drum, mml:"<br/>&emsp;CreatePort(name:kick, channel:10) l8 o1 c^^c ^c^^<br/>&emsp;CreatePort(name:snare, channel:10) l8 o1 ^^d^ ^^d^<br/>")|
-|Seq(<br>&emsp;[シーケンス名],<br>&emsp;length:[長さ(省略可)]<br>)<br>別名 Sequence|定義済のシーケンス(サブシーケンス)を呼び出します。| // 定義したドラムパターンを3回繰り返します。<br>// 3周目のシ－ケンスは2分音符分のみ採用します<br/>Seq(drum) Seq(drum) Seq(drum,length:2)|
+|Seq(<br>&emsp;[シーケンス名],<br>&emsp;length:[長さ(省略可)]<br>)<br>別名 Sequence|定義済のシーケンス(サブシーケンス)を呼び出します。| // 定義したドラムパターンを3回繰り返します。<br>// 3周目のシ－ケンスは2分音符分のみ採用します<br/>Seq(drum) Seq(drum) Seq(drum,length:"2")|
 |Meta(<br>&emsp;type:[イベントタイプ],<br>&emsp;[データ]...<br>)|メタイベントです。<br>typeでイベントタイプを指定します。<br>名前ナシの可変長引数でデータを指定します。データ長を記述する必要はありません。| // title 情報です<br/>Meta(type:0x1,"The Lost King's Scepter")<br>// SMPTE オフセットです。<br>Meta(type:0x54,96,0,0,0,0)|
 |DefinePresetFM(<br>&emsp;no:[プログラムナンバー],<br>&emsp;name:[音色名],<br>&emsp;[音色データ]...<br>)|rlib-MML でFM音源音色を定義するシーケンサー固有のメタイベントです。|DefinePresetFM(no:4,name:"piano",<br>// AR  DR  SR  RR  SL  TL KS  ML DT<br>   29,  8,  0,  8,  3, 31, 2,  1, 3,<br>   31,  3,  1,  6, 10,  0, 0,  2, 7,<br>   29, 20,  0,  9,  2, 44, 0,  4, 2,<br>   31,  7,  2,  6,  6,  0, 0,  1, 5,<br>// AL  FB<br>    4,  7,<br>)|
 

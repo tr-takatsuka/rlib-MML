@@ -128,6 +128,7 @@ namespace rlib::sequencer {
 				createSequenceNameError,		// CreateSequence コマンドの名前指定に誤りがあります
 				sequenceError,					// Sequence コマンドに誤りがあります
 				sequenceNameError,				// Sequence コマンドの名前指定に誤りがあります
+				sequenceLengthError,			// Sequence コマンドの length 指定に誤りがあります
 				metaError,						// Meta コマンドに誤りがあります
 				metaTypeError,					// Meta コマンドの type の指定に誤りがあります
 				fineTuneError,					// FineTune コマンドに誤りがあります

@@ -59,6 +59,7 @@ std::string MmlCompiler::Exception::getMessage(Code code) {
 		{Code::createSequenceNameError,			u8R"(CreateSequence コマンドの名前指定に誤りがあります)" },
 		{Code::sequenceError,					u8R"(Sequence コマンドに誤りがあります)" },
 		{Code::sequenceNameError,				u8R"(Sequence コマンドの名前指定に誤りがあります)" },
+		{Code::sequenceLengthError,				u8R"(Sequence コマンドの length 指定に誤りがあります)" },
 		{Code::metaError,						u8R"(Meta コマンドに誤りがあります)" },
 		{Code::metaTypeError,					u8R"(Meta コマンドの type の指定に誤りがあります)" },
 		{Code::fineTuneError,					u8R"(FineTune コマンドの指定に誤りがあります)" },
@@ -154,7 +155,7 @@ auto parseString(const std::string::const_iterator& iBegin, const std::string::c
 std::string::const_iterator parseComment(const std::string::const_iterator& iBegin, const std::string::const_iterator& iEnd) {
 	auto it = iBegin;
 	while (true) {
-		it = std::find_if(it, iEnd, [](const auto& ch) {return !std::isspace(ch); });	// 先頭の空白を読み飛ばす
+		it = std::find_if(it, iEnd, [](const auto& ch) {return !std::isspace(ch, std::locale::classic()); });	// 先頭の空白を読み飛ばす
 		static const std::initializer_list<std::pair<std::string, regex>> list = {
 			{"//",regex(R"(^.*(\r\n|\n|\r|$))")},
 			{"/*",regex(R"(^((?!\*\/)[\s\S])*\*\/)") },
@@ -253,31 +254,37 @@ struct ParseFunctionResult {
 	std::vector<MmlCompiler::Util::Word>			argsList;			// 引数リスト(名前ナシ連番)
 	std::map<std::string, MmlCompiler::Util::Word>	argsName;			// 引数リスト(名前アリ)
 
-	template <typename T> std::optional<T> findArg(const std::string& name)const {
-		if (auto i = argsName.find(name); i != argsName.end() && std::holds_alternative<T>(i->second)) {
-			return std::get<T>(i->second);
+	template <typename T> std::pair<bool,std::optional<T>> findArg(const std::string& name)const {
+		if (auto i = argsName.find(name); i != argsName.end()) {
+			if (std::holds_alternative<T>(i->second)) {
+				return std::make_pair(true, std::get<T>(i->second));
+			}
+			return std::make_pair(true, std::nullopt);	// 型が違う
 		}
-		return std::nullopt;
+		return std::make_pair(false, std::nullopt);
 	}
-	template <typename T> std::optional<T> findArg(size_t index)const {
-		if (argsList.size() > index && std::holds_alternative<T>(argsList[index])) {
-			return std::get<T>(argsList[index]);
+	template <typename T> std::pair<bool, std::optional<T>> findArg(size_t index)const {
+		if (argsList.size() > index) {
+			if (std::holds_alternative<T>(argsList[index])) {
+				return std::make_pair(true, std::get<T>(argsList[index]));
+			}
+			return std::make_pair(true, std::nullopt);	// 型が違う
 		}
-		return std::nullopt;
+		return std::make_pair(false, std::nullopt);
 	}
 
 	template <typename T> std::optional<std::string> findArgString(const T& name)const {
-		if (auto r = findArg<PairIterator>(name)) {
+		if (auto r = findArg<PairIterator>(name).second) {
 			return std::string(r->first, r->second);
 		}
 		return std::nullopt;
 	}
 
 	template <typename T> std::optional<std::intmax_t> findArgInt(const T& name)const {
-		if (auto r = findArg<std::intmax_t>(name)) {
+		if (auto r = findArg<std::intmax_t>(name).second) {
 			return r;
 		}
-		if (auto r = findArg<std::uintmax_t>(name)) {
+		if (auto r = findArg<std::uintmax_t>(name).second) {
 			return r;
 		}
 		return std::nullopt;
@@ -285,13 +292,13 @@ struct ParseFunctionResult {
 
 	// 整数でも浮動小数でも有効とする
 	template <typename T> std::optional<double> findArgNumber(const T& name)const {
-		if (auto r = findArg<std::intmax_t>(name)) {
-			return r;
+		if (auto r = findArg<std::intmax_t>(name).second) {
+			return static_cast<double>(*r);
 		}
-		if (auto r = findArg<std::uintmax_t>(name)) {
-			return r;
+		if (auto r = findArg<std::uintmax_t>(name).second) {
+			return static_cast<double>(*r);
 		}
-		if (auto r = findArg<double>(name)) {
+		if (auto r = findArg<double>(name).second) {
 			return r;
 		}
 		return std::nullopt;
@@ -597,7 +604,7 @@ public:
 				if (const auto i = state.sequences.find(name); i != state.sequences.end()) {	// 既にあるなら
 					throw Exception(Exception::Code::createSequenceDuplicateError, begin, end);
 				}
-				const auto mml = (*r).findArg<PairIterator>("mml");
+				const auto mml = (*r).findArg<PairIterator>("mml").second;
 				if (!mml) {
 					throw Exception(Exception::Code::createSequenceError, begin, end);
 				}
@@ -648,11 +655,13 @@ public:
 				seq.position = port.position;
 
 				seq.length = [&]()->std::optional<size_t> {
-					const auto length = (*r).findArg<PairIterator>("length");
-					if (!length) return std::nullopt;
+					const auto arg = (*r).findArg<PairIterator>("length");
+					if (!arg.first) return std::nullopt;	// 指定ナシ
+					if (!arg.second) throw Exception(Exception::Code::sequenceLengthError, begin, end);	// 型が違う
+					const auto& length = arg.second;
 					const auto len = parseLength(length->first, length->second, port.defaultStep);
 					if (len.next != length->second) {
-						throw Exception(Exception::Code::sequenceNameError, begin, end);		// 余計な文字列がある
+						throw Exception(Exception::Code::sequenceLengthError, begin, end);		// 余計な文字列がある
 					}
 					return len.step;
 				}();
@@ -688,7 +697,7 @@ public:
 				auto& port = r2.first->second;
 				port.port.name = name;
 				if (const auto s = r->findArgString("instrument")) port.port.instrument = *s;
-				const auto ch = r->findArg<uintmax_t>("channel");
+				const auto ch = r->findArg<uintmax_t>("channel").second;
 				if (!ch || *ch < 1 || *ch > 16) {
 					throw Exception(Exception::Code::createPortChannelError, begin, end);
 				}
@@ -717,10 +726,10 @@ public:
 		const auto parseVolume = [&state](const iterator& begin, const iterator& end)->std::optional<iterator> {
 			if (auto r = parseFunction(begin, end, { "V","Volume","volume" }, {})) {		// Volume
 				auto& port = *state.currentPort;
-				if (const auto v = r->findArg<intmax_t>(0)) {	// 符号付なら相対指定
+				if (const auto v = r->findArg<intmax_t>(0).second) {	// 符号付なら相対指定
 					const intmax_t n = port.volume + *v;
 					port.volume = static_cast<decltype(port.volume)>(std::min<decltype(n)>(std::max<decltype(n)>(n, 0), 127));
-				} else if (const auto v = r->findArg<uintmax_t>(0)) {	//  符号ナシなら絶対指定
+				} else if (const auto v = r->findArg<uintmax_t>(0).second) {	//  符号ナシなら絶対指定
 					if (*v < 0 || *v > 127) {
 						throw Exception(Exception::Code::volumeRangeError, begin, end);
 					}
@@ -740,10 +749,10 @@ public:
 		const auto parsePan = [&state](const iterator& begin, const iterator& end)->std::optional<iterator> {
 			if (auto r = parseFunction(begin, end, { "Pan","pan" }, {})) {		// Pan
 				auto& port = *state.currentPort;
-				if (const auto v = r->findArg<intmax_t>(0)) {	// 符号付なら相対指定
+				if (const auto v = r->findArg<intmax_t>(0).second) {	// 符号付なら相対指定
 					const intmax_t n = port.pan + *v;
 					port.pan = static_cast<decltype(port.pan)>(std::min<decltype(n)>(std::max<decltype(n)>(n, 0), 127));
-				} else if (const auto v = r->findArg<uintmax_t>(0)) {	//  符号ナシなら絶対指定
+				} else if (const auto v = r->findArg<uintmax_t>(0).second) {	//  符号ナシなら絶対指定
 					if (*v < 0 || *v > 127) {
 						throw Exception(Exception::Code::panRangeError, begin, end);
 					}
@@ -780,13 +789,13 @@ public:
 		const auto parseControlChange = [&state](const iterator& begin, const iterator& end)->std::optional<iterator> {
 			if (auto r = parseFunction(begin, end, { "CC","ControlChange","controlChange" }, { "no","value" })) {		// ControlChange
 				const auto no = [&] {
-					if (auto v = r->findArg<uintmax_t>(0)) return *v;
-					if (auto v = r->findArg<uintmax_t>("no")) return *v;
+					if (auto v = r->findArg<uintmax_t>(0).second) return *v;
+					if (auto v = r->findArg<uintmax_t>("no").second) return *v;
 					throw Exception(Exception::Code::controlChangeError, begin, end);
 				}();
 				const auto val = [&] {
-					if (auto v = r->findArg<uintmax_t>(1)) return *v;
-					if (auto v = r->findArg<uintmax_t>("value")) return *v;
+					if (auto v = r->findArg<uintmax_t>(1).second) return *v;
+					if (auto v = r->findArg<uintmax_t>("value").second) return *v;
 					throw Exception(Exception::Code::controlChangeError, begin, end);
 				}();
 				if (no < 0 || no > 127 || val < 0 || val > 127) {
