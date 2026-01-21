@@ -4,6 +4,8 @@
 //#include <boost/locale/generator.hpp>
 #include <boost/locale/encoding.hpp> 
 //#include <boost/locale/util.hpp> 
+#else
+#include <boost/regex.hpp>
 #endif
 
 #include "MidiEvent.h"
@@ -423,13 +425,13 @@ namespace rlib::sequencer {
 
 							// 文字列 trim 全角スペース対応
 							const auto stringTrim = [](const std::string& s)->std::string {
-#ifndef _MSC_VER
-								using namespace std;
+#if defined(_MSC_VER) || defined(__EMSCRIPTEN__)
+								namespace ns = boost;	// MSC と Emscripte は std::regex_search で落ちるケースがあるのでとりあえずboostを使う
 #else
-								using namespace boost;	// MSCだとstd::regex_searchで落ちるケースがあるのでとりあえずboostを使う
+								namespace ns = std;
 #endif
-								static const regex re(R"(^([ \a\b\e\f\n\r\t\v]|　)+|([ \a\b\e\f\n\r\t\v]|　)+$)");	// "\s"は日本語でヘンになる
-								return regex_replace(s, re, "");
+								static const ns::regex re(R"(^([ \a\b\e\f\n\r\t\v]|　)+|([ \a\b\e\f\n\r\t\v]|　)+$)");	// "\s"は日本語でヘンになる
+								return ns::regex_replace(s, re, "");
 							};
 							if (auto result = stringTrim(decoded); !result.empty()) return result;
 							return std::nullopt;
