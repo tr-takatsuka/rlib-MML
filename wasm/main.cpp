@@ -17,8 +17,7 @@
 emscripten::val mmlToSmf(const std::string& mml) {
 	auto ret = emscripten::val::object();
 	try {
-		std::cout << "mmlToSmf" << std::endl;
-
+		// std::cout << "mmlToSmf" << std::endl;
 		try {
 			const auto smf = rlib::sequencer::mmlToSmf(mml);
 			std::stringstream ss;
@@ -47,11 +46,11 @@ emscripten::val mmlToSmf(const std::string& mml) {
 			throw std::runtime_error(s);
 		}
 	} catch (std::exception& e) {
-		std::cout << "mmlToSmf std::exception" << std::endl;
+		// std::cout << "mmlToSmf std::exception" << std::endl;
 		ret.set("message", emscripten::val::u8string(e.what()));
 		ret.set("ok", false);
 	} catch (...) {
-		std::cout << "mmlToSmf unknown exception" << std::endl;
+		// std::cout << "mmlToSmf unknown exception" << std::endl;
 		ret.set("message", emscripten::val::u8string("unknown exception"));
 		ret.set("ok", false);
 	}
@@ -62,18 +61,18 @@ emscripten::val mmlToSmf(const std::string& mml) {
 emscripten::val smfToMml(const std::string& smfBinary) {
 	auto ret = emscripten::val::object();
 	try {
-		std::cout << "smfToMml" << std::endl;
+		// std::cout << "smfToMml" << std::endl;
 		std::istringstream is(smfBinary, std::istringstream::binary);
 		auto smf = rlib::midi::Smf::fromStream(is);
 		const auto mml = rlib::sequencer::smfToMml(smf);
 		ret.set("result", emscripten::val::u8string(mml.c_str()));
 		ret.set("ok", true);
 	} catch (std::exception& e) {
-		std::cout << "smfToMml std::exception" << std::endl;
+		// std::cout << "smfToMml std::exception" << std::endl;
 		ret.set("message", emscripten::val::u8string(e.what()));
 		ret.set("ok", false);
 	} catch (...) {
-		std::cout << "smfToMml unknown exception" << std::endl;
+		// std::cout << "smfToMml unknown exception" << std::endl;
 		ret.set("message", emscripten::val::u8string("unknown exception"));
 		ret.set("ok", false);
 	}
