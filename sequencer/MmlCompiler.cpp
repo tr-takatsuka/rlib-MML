@@ -132,6 +132,9 @@ std::string MmlCompiler::Result::getMessage(ErrorCode code) {
 		{ErrorCode::definePresetFMError,			u8R"(DefinePresetFM コマンドに誤りがあります)"},
 		{ErrorCode::definePresetFMNoError,			u8R"(DefinePresetFM コマンドのプログラムナンバー指定に誤りがあります)"},
 		{ErrorCode::definePresetFMRangeError,		u8R"(DefinePresetFM コマンドの値が範囲外です)"},
+		{ErrorCode::definePresetPSGError,			u8R"(DefinePresetPSG コマンドに誤りがあります)"},
+		{ErrorCode::definePresetPSGNoError,			u8R"(DefinePresetPSG コマンドのプログラムナンバー指定に誤りがあります)"},
+		{ErrorCode::definePresetPSGRangeError,		u8R"(DefinePresetPSG コマンドの値が範囲外です)"},
 		{ErrorCode::unknownError,					u8R"(解析出来ない書式です)"},
 		{ErrorCode::stdEexceptionError,				u8R"(std::excption エラーです)"},
 	};
@@ -1475,7 +1478,65 @@ public:
 				}
 				const Json j = Json::Map{
 					{"rlib-MML", Json::Map{
-						{"fm4op", Json::Map{
+						{"opnfm", Json::Map{
+							{std::to_string(*no), Json::Map{
+								{"name", name},
+								{"reg", parameter},
+							}},
+						}},
+					}},
+				};
+				auto& port = *state.currentPort;
+				auto e = std::make_shared<EventMeta>();
+				e->type = static_cast<decltype(e->type)>(midi::EventMeta::Type::sequencerLocal);
+				auto stringified = j.stringify();
+				e->data = { stringified.begin(), stringified.end() };
+				auto it = port.port.eventList.emplace(port.position, e);
+				return r->next;
+			}},
+
+			// DefinePresetPSG PSG(SSG)音色定義(rlib-MML 固有メタイベント)
+			{ErrorCode::definePresetPSGError,[](State& state,const std::string_view& text)->std::optional<std::string_view> {
+				// AR,HR,DR,RR	アタック/ホールド/ディケイ/リリース時間(秒、0～60)
+				// SL			サステインレベル(0.0～1.0)
+				// noise		ノイズ周波数(-1:OFF, 0～31)
+				// tone			トーン ON(1)/OFF(0)
+				constexpr double timeMax = 60.0;
+				static constexpr std::array<std::pair<double, double>, 5> envRange = { {
+					{0.0,timeMax}, {0.0,timeMax}, {0.0,timeMax}, {0.0,1.0}, {0.0,timeMax},
+				} };	// AR,HR,DR,SL,RR の順
+
+				auto r = parseFunction(text, { "DefinePresetPSG" }, { "no","name" }, envRange.size() + 2);	// +2: noise,tone
+				if (!r) return std::nullopt;
+				const auto no = (*r).findArgInt("no");
+				if (!no || *no < 0 || *no>127) {
+					throw MmlException(ErrorCode::definePresetPSGNoError, text);
+				}
+				const auto name = (*r).findArgString("name").value_or("");
+
+				Json::Array parameter;
+				for (size_t i = 0; i < envRange.size(); i++) {
+					const auto n = (*r).findArgNumber(i);
+					if (!n) throw MmlException(ErrorCode::definePresetPSGError, text);
+					if (*n < envRange[i].first || *n > envRange[i].second) throw MmlException(ErrorCode::definePresetPSGRangeError, text);
+					parameter.push_back(*n);
+				}
+				{// noise (-1～31)
+					const auto n = (*r).findArgInt(envRange.size());
+					if (!n) throw MmlException(ErrorCode::definePresetPSGError, text);
+					if (*n < -1 || *n > 31) throw MmlException(ErrorCode::definePresetPSGRangeError, text);
+					parameter.push_back(*n);
+				}
+				{// tone (0 or 1)
+					const auto n = (*r).findArgInt(envRange.size() + 1);
+					if (!n) throw MmlException(ErrorCode::definePresetPSGError, text);
+					if (*n < 0 || *n > 1) throw MmlException(ErrorCode::definePresetPSGRangeError, text);
+					parameter.push_back(*n);
+				}
+
+				const Json j = Json::Map{
+					{"rlib-MML", Json::Map{
+						{"opnpsg", Json::Map{
 							{std::to_string(*no), Json::Map{
 								{"name", name},
 								{"reg", parameter},

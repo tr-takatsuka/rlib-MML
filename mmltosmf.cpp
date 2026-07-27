@@ -35,7 +35,7 @@ int main(const int argc, const char* const argv[])
 		po::store(po::command_line_parser(argc, argv).options(desc).positional(pd).run(), vm);
 
 		if (vm.count("version")) {
-			std::cout << "mmltosmf version 1.2.6" << std::endl;
+			std::cout << "mmltosmf version 1.2.7" << std::endl;
 			return 0;
 		}
 

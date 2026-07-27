@@ -76,7 +76,10 @@ WebAssembly をサポートしています。
 |MasterVolume([値])|マスターボリュームです。値は 0～16383 です。相対指定が可能です。<br>システムエクスクルーシブのGMマスターボリュームの別名です| // マスターボリュームを10000にしたあと 1000 上げています<br/>MasterVolume(10000) r MasterVolume(+=1000)|
 |SysEx(<br>&emsp;[データ]...<br>)<br>|システムエクスルーシブです。<br>名前ナシの可変長引数でデータを指定します。<br>先頭バイトは 0xf0、0xf7 のいずれかを、末尾は（原則として）0xf7 を指定します| // Roland GS 音源をリセットします（GS Reset）<br/>SysEx(0xf0,0x41,0x10,0x42,0x12,0x40,0x00,0x7f,0x00,0x41,0xf7)|
 |Meta(<br>&emsp;type:[イベントタイプ],<br>&emsp;[データ]...<br>)|メタイベントです。<br>typeでイベントタイプを指定します。<br>名前ナシの可変長引数でデータを指定します。<br>データ長を記述する必要はありません。| // title 情報です<br/>Meta(type:0x1,"The Lost King's Scepter")<br>// SMPTE オフセットです。<br>Meta(type:0x54,96,0,0,0,0)|
-|DefinePresetFM(<br>&emsp;no:[プログラムナンバー],<br>&emsp;name:[音色名],<br>&emsp;[音色データ]...<br>)|rlib-MML でFM音源音色を定義するシーケンサー固有のメタイベントです。|DefinePresetFM(no:4,name:"piano",<br>// AR  DR  SR  RR  SL  TL KS  ML DT<br>   29,  8,  0,  8,  3, 31, 2,  1, 3,<br>   31,  3,  1,  6, 10,  0, 0,  2, 7,<br>   29, 20,  0,  9,  2, 44, 0,  4, 2,<br>   31,  7,  2,  6,  6,  0, 0,  1, 5,<br>// AL  FB<br>    4,  7,<br>)|
+|DefinePresetFM(<br>&emsp;no:[プログラムナンバー],<br>&emsp;name:[音色名],<br>&emsp;[音色データ]...<br>)|rlib-MML でFM音源音色を定義するシーケンサー固有のメタイベントです。|DefinePresetFM(no:4, name:"piano",<br>// AR  DR  SR  RR  SL  TL KS  ML DT<br>   29,  8,  0,  8,  3, 31, 2,  1, 3,<br>   31,  3,  1,  6, 10,  0, 0,  2, 7,<br>   29, 20,  0,  9,  2, 44, 0,  4, 2,<br>   31,  7,  2,  6,  6,  0, 0,  1, 5,<br>// AL  FB<br>    4,  7,<br>)|
+|DefinePresetPSG(<br>&emsp;no:[プログラムナンバー],<br>&emsp;name:[音色名],<br>&emsp;[音色データ]...<br>)|rlib-MML でPSG音源音色を定義するシーケンサー固有のメタイベントです。|DefinePresetPSG(no:5, name:"piano",<br>// AR   HR    DR   SL   RR		noise	tone<br>  0.0, 0.0,  1.0, 0.3, 1.0,		   -1,     1,<br>)<br>// AR,HR,DR,SL,RR : ソフトウェアエンベロープの設定値<br>// noise : ノイズ周波数(0～31) -1=OFF<br>// tone : トーン 1=ON/0=OFF|
+
+
 
 
 ## 文字列
