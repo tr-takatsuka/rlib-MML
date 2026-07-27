@@ -122,6 +122,9 @@ namespace rlib::sequencer {
 			definePresetFMError,			// DefinePresetFM コマンドに誤りがあります
 			definePresetFMNoError,			// DefinePresetFM コマンドのプログラムナンバー指定に誤りがあります
 			definePresetFMRangeError,		// DefinePresetFM コマンドの値が範囲外です
+			definePresetPSGError,			// DefinePresetPSG コマンドに誤りがあります
+			definePresetPSGNoError,			// DefinePresetPSG コマンドのプログラムナンバー指定に誤りがあります
+			definePresetPSGRangeError,		// DefinePresetPSG コマンドの値が範囲外です
 			unknownError,					// 解析出来ない書式です
 			stdEexceptionError,				// std::excption エラーです
 		};

@@ -388,8 +388,9 @@ namespace rlib::sequencer {
 						try {
 							// rlib-MML 固有情報なら展開する
 							if (const auto json = Json::parse(e.getText())["rlib-MML"]; !json.isNull()) {
-								const auto& map = json["fm4op"].get<Json::Map>();
-								if (!map.empty()) {
+
+								// FM音色定義(DefinePresetFM)
+								if (const auto& map = json["opnfm"].get<Json::Map>(); !map.empty()) {
 									for (const auto it : map) {
 										const auto no = std::stoi(it.first);
 										const auto& name = it.second["name"].get<std::string>();
@@ -406,6 +407,34 @@ namespace rlib::sequencer {
 											, no, safeText(name), data);
 									}
 								}
+
+								// PSG(SSG)音色定義(DefinePresetPSG)
+								if (const auto& map = json["opnpsg"].get<Json::Map>(); !map.empty()) {
+									const auto formatEnvValue = [](double v)->std::string {
+										auto s = string::format("%g", v);
+										if (s.find('.') == std::string::npos && v >= 0.0 && v <= 9.0) s += ".0";	// 0～9の正数の場合は小数点第一位(.0)を付ける
+										return s;
+									};
+									for (const auto it : map) {
+										const auto no = std::stoi(it.first);
+										const auto& name = it.second["name"].get<std::string>();
+										const auto& data = it.second["reg"].get<Json::Array>();	// AR,HR,DR,SL,RR,noise,tone
+										if (data.size() != 7) continue;
+										const auto ar = formatEnvValue(data[0].get<double>());
+										const auto hr = formatEnvValue(data[1].get<double>());
+										const auto dr = formatEnvValue(data[2].get<double>());
+										const auto sl = formatEnvValue(data[3].get<double>());
+										const auto rr = formatEnvValue(data[4].get<double>());
+										const auto noise = data[5].get<std::intmax_t>();
+										const auto tone = data[6].get<std::intmax_t>();
+										*mmls.rbegin() += string::format(
+											"\nDefinePresetPSG(no:%d, name:%s,\n"
+											"// AR   HR   DR   SL   RR   noise tone\n"
+											"  %s, %s, %s, %s, %s,  %d,  %d)\n"
+											, no, safeText(name), ar, hr, dr, sl, rr, noise, tone);
+									}
+								}
+
 								return std::next(it);
 							}
 						} catch (...) {

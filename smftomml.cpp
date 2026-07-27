@@ -29,7 +29,7 @@ int main(const int argc, const char* const argv[])
 		po::store(po::command_line_parser(argc, argv).options(desc).positional(pd).run(), vm);
 
 		if (vm.count("version")) {
-			std::cout << "smftomml version 1.2.4" << std::endl;
+			std::cout << "smftomml version 1.2.5" << std::endl;
 			return 0;
 		}
 
