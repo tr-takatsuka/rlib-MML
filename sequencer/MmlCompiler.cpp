@@ -1499,7 +1499,7 @@ public:
 			{ErrorCode::definePresetPSGError,[](State& state,const std::string_view& text)->std::optional<std::string_view> {
 				// AR,HR,DR,RR	アタック/ホールド/ディケイ/リリース時間(秒、0～60)
 				// SL			サステインレベル(0.0～1.0)
-				// noise		ノイズ周波数(-1:OFF, 0～31)
+				// noise		ノイズ周波数(0:OFF, 1～31)
 				// tone			トーン ON(1)/OFF(0)
 				constexpr double timeMax = 60.0;
 				static constexpr std::array<std::pair<double, double>, 5> envRange = { {
@@ -1521,10 +1521,10 @@ public:
 					if (*n < envRange[i].first || *n > envRange[i].second) throw MmlException(ErrorCode::definePresetPSGRangeError, text);
 					parameter.push_back(*n);
 				}
-				{// noise (-1～31)
+				{// noise (0～31)
 					const auto n = (*r).findArgInt(envRange.size());
 					if (!n) throw MmlException(ErrorCode::definePresetPSGError, text);
-					if (*n < -1 || *n > 31) throw MmlException(ErrorCode::definePresetPSGRangeError, text);
+					if (*n < 0 || *n > 31) throw MmlException(ErrorCode::definePresetPSGRangeError, text);
 					parameter.push_back(*n);
 				}
 				{// tone (0 or 1)
