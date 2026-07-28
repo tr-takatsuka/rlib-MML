@@ -7,6 +7,7 @@
 #else
 #include <boost/regex.hpp>
 #endif
+#include <format>
 #include <ranges>
 
 #include "MidiEvent.h"
