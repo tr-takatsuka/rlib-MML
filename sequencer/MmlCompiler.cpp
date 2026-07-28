@@ -211,7 +211,7 @@ namespace {
 			std::string_view next;					// 次の位置
 			std::optional<std::string_view> value;	// パースした文字列 nullの場合はパースエラー(終端がない)
 		};
-		std::optional<Result> result({ text });
+		std::optional<Result> result(Result{ text });
 		if (result->next.starts_with('"')) {						// "・・・" 形式の文字列
 			result->next.remove_prefix(1);							// 先頭の " を飛ばす
 			auto pos = result->next.find('"');						// 終端の " を探す

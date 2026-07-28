@@ -811,14 +811,16 @@ namespace rlib
 										std::vector<char16_t>{static_cast<char16_t>(stoi(u16a, nullptr, 16)), static_cast<char16_t>(stoi(u16b, nullptr, 16))} :
 										std::vector<char16_t>{ static_cast<char16_t>(stoi(u16,nullptr,16)) };
 									const auto su16 = std::u16string(&c[0], c.size());
-									const string su8 =						// UTF16 → UTF8
 #ifdef _MSC_VER
 #pragma warning(push)
 #pragma warning(disable : 4996)
-										std::wstring_convert<std::codecvt_utf8_utf16<uint16_t>, uint16_t>().to_bytes(reinterpret_cast<const uint16_t*>(su16.c_str()));
+									const string su8 = std::wstring_convert<std::codecvt_utf8_utf16<uint16_t>, uint16_t>().to_bytes(reinterpret_cast<const uint16_t*>(su16.c_str()));	// UTF16 → UTF8
 #pragma warning(pop)
 #else
-										std::wstring_convert<std::codecvt_utf8_utf16<char16_t>, char16_t>().to_bytes(su16.c_str());
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+									const string su8 = std::wstring_convert<std::codecvt_utf8_utf16<char16_t>, char16_t>().to_bytes(su16.c_str());	// UTF16 → UTF8
+#pragma GCC diagnostic pop
 #endif
 									result += su8;
 								}

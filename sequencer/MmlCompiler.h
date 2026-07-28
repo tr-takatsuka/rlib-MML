@@ -1,5 +1,14 @@
 ﻿#pragma once
 
+#include <cstdint>
+#include <map>
+#include <memory>
+#include <optional>
+#include <string>
+#include <string_view>
+#include <variant>
+#include <vector>
+
 namespace rlib::sequencer {
 
 	class MmlCompiler {
