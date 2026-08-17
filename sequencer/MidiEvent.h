@@ -312,7 +312,7 @@ namespace rlib::midi {
 		}
 
 		static EventMeta createEndOfTrack() {
-			return EventMeta(Type::endOfTrack, {});
+			return EventMeta(Type::endOfTrack, std::vector<uint8_t>{});
 		}
 	};
 
