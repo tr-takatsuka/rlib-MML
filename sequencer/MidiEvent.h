@@ -308,7 +308,7 @@ namespace rlib::midi {
 			assert(sizeof(t) == 4);
 			t.tempo = static_cast<uint32_t>(60000000.0 / tempo);		// 4分音符の時間(microsec)
 			std::reverse(reinterpret_cast<uint8_t*>(&t.tempo), reinterpret_cast<uint8_t*>(&t.tempo) + sizeof(t.tempo));		// エンディアン変更
-			return EventMeta(Type::tempo, { t.buf[1], t.buf[2], t.buf[3] });
+			return EventMeta(Type::tempo, std::vector<uint8_t>{ t.buf[1], t.buf[2], t.buf[3] });
 		}
 
 		static EventMeta createEndOfTrack() {
