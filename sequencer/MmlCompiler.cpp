@@ -1556,6 +1556,9 @@ public:
 
 		for (auto next = targetMml; true;) {
 			try {
+				next.remove_prefix(std::distance(next.begin(), std::find_if(next.begin(), next.end(), [](unsigned char ch) {	// 先頭の空白を読み飛ばす(必要)
+					return !std::isspace(ch); // return !std::isspace(ch, std::locale::classic()); gccでNG
+				})));
 				next = skipComment(next);			// コメントを読み飛ばす
 				if (next.empty()) break;					// 完了
 				auto i = parsers.begin();
@@ -1577,7 +1580,11 @@ public:
 
 				// 行末まで飛ぶ(改行が無ければ末尾まで飛ぶ)
 				if (auto pos = next.find_first_of("\r\n"); pos != std::string_view::npos) {
-					next = next.substr(pos);
+					if (pos == 0) {
+						next.remove_prefix(next.starts_with("\r\n") ? 2 : 1);
+					} else {
+						next = next.substr(pos);
+					}
 				} else {
 					next = {};
 				}
