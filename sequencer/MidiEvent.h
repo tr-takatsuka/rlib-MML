@@ -255,6 +255,11 @@ namespace rlib::midi {
 			, type(type_)
 			, data(std::move(data_))
 		{}
+		EventMeta(Type type_, const std::string& s)
+			:Event()
+			, type(type_)
+			, data(std::vector<uint8_t>{ s.begin(), s.end() })
+		{}
 
 		virtual std::vector<uint8_t> smfBytes() const {
 			std::vector<uint8_t> v{
