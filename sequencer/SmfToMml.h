@@ -50,6 +50,17 @@ namespace rlib::sequencer {
 			return string::format(R"(R"t_(%s)t_")", text);	// 最後は R"t_(○○)t_" で諦める
 		};
 
+		// 文字列 trim 全角スペース対応
+		const auto stringTrim = [](const std::string& s)->std::string {
+#if defined(_MSC_VER) || defined(__EMSCRIPTEN__)
+			namespace ns = boost;	// MSC と Emscripte は std::regex_search で落ちるケースがあるのでとりあえずboostを使う
+#else
+			namespace ns = std;
+#endif
+			static const ns::regex re(R"(^([ \a\b\e\f\n\r\t\v]|　)+|([ \a\b\e\f\n\r\t\v]|　)+$)");	// "\s"は日本語でヘンになる
+			return ns::regex_replace(s, re, "");
+		};
+
 		const auto decodeText = [](const std::string& bin)->std::optional<std::string> {
 			try {
 				const auto hasControlCode = [](const std::string& s) {
@@ -135,16 +146,16 @@ namespace rlib::sequencer {
 						case dotLen(60, 1):			add("32.");		return;
 						case 240 / 3:				add("24");		return;
 						case dotLen(240 / 3, 2):	add("24..");	return;
-						case 120:					add("16");		return;
-						case dotLen(120, 1):		add("16.");		return;
-						case dotLen(120, 2):		add("16..");	return;
+						case 120:					add("");		return;
+						case dotLen(120, 1):		add(".");		return;
+						case dotLen(120, 2):		add("..");		return;
 						case 480 / 3:				add("12");		return;
 						case dotLen(480 / 3, 2):	add("12..");	return;
-						case 240:					add("");		return;
-						case dotLen(240, 1):		add(".");		return;
-						case dotLen(240, 2):		add("..");		return;
-						case dotLen(240, 3):		add("...");		return;
-						case 480:					add("^");		return;
+						case 240:					add("^");		return;
+						case dotLen(240, 1):		add("^^");		return;
+						case dotLen(240, 2):		add("8..");		return;
+						case dotLen(240, 3):		add("8...");	return;
+						case 480:					add("4");		return;
 						case dotLen(480, 1):		add("4.");		return;
 						case dotLen(480, 2):		add("4..");		return;
 						case dotLen(480, 3):		add("4...");	return;
@@ -152,7 +163,7 @@ namespace rlib::sequencer {
 						case dotLen(960,1):			add("2.");		return;
 						case dotLen(960,2):			add("2..");		return;
 						case dotLen(960,3):			add("2...");	return;
-						case 960 + 240:				add("2^");		return;
+						// case 960 + 240:			add("2^");		return;
 						case 1920:					add("1");		return;
 						default:	break;
 						}
@@ -492,10 +503,9 @@ namespace rlib::sequencer {
 
 			std::string result;
 
-			const auto instrumentText = instrument.empty() ? "" : string::format("instrument:%s, ", instrument);
-			result += string::format("\nCreatePort(name:%s, %schannel:%d)", name, instrumentText, channel + 1, channel + 1);
-			result += string::format("\nPort(%s)", name, channel + 1);
-			result += string::format(" l8 ");
+			const auto instrumentText = instrument.empty() ? "" : string::format("instrument:%s, ", safeText(instrument));
+			result += string::format("\nCreatePort(name:%s, %schannel:%d)", safeText(name), instrumentText, channel + 1, channel + 1);
+			result += string::format(" l16\n");
 
 			for (const auto& mml : mmls) {
 				result += mml + "\n";
@@ -509,127 +519,102 @@ namespace rlib::sequencer {
 		using MapEvents = std::map<int, Smf::Events>;	// <ch,evnets>
 
 		struct SmfTrack {
-			std::string		instrumentName;
-			std::string		sequenceName;
-			MapEvents		mapEvents;		// <ch,evnets>
+			std::string	sequenceName = "unknown";
+			std::string	instrumentName = "unknown";
+			MapEvents	mapEvents;		// <ch,evnets>
 		};
-
-		struct TrackKey {
-			std::string		instrumentName = "";
-			std::string		sequenceName = "noname";
-			bool operator<(const TrackKey& b) const {
-				if (instrumentName != b.instrumentName) return instrumentName < b.instrumentName;
-				return sequenceName < b.sequenceName;
-			}
-		};
-
-
-		std::map<TrackKey, MapEvents> mapTrack = [&decodeText](const midi::Smf& smf) {
-
-			std::map<TrackKey, MapEvents> resultMapTrack;
-
-			constexpr auto metaChannel = 999;
-
+		std::vector<SmfTrack> smfTracks = [&](const midi::Smf& smf) {
+			std::vector<SmfTrack> tracks;
 			for (auto& track : smf.tracks) {
-				TrackKey trackKey;
+				SmfTrack smfTrack;
+				constexpr auto metaChannel = 999;
+				struct {
+					bool sequenceName = false;
+					bool instrumentName = false;
+				}exists;
 				for (auto& event : track.events) {
 					if (auto e = std::dynamic_pointer_cast<const midi::EventCh>(event.second)) {
-						resultMapTrack[trackKey][e->channel].insert(event);
+						smfTrack.mapEvents[e->channel].insert(event);
 					} else if (auto e = std::dynamic_pointer_cast<const midi::EventMeta>(event.second)) {
 
-						const auto name = [&decodeText](const std::string& s)->std::optional<std::string> {
-
+						const auto name = [&](const std::string& s)->std::optional<std::string> {
 							const auto decoded = decodeText(s).value_or(s);
-
-							// 文字列 trim 全角スペース対応
-							const auto stringTrim = [](const std::string& s)->std::string {
-#if defined(_MSC_VER) || defined(__EMSCRIPTEN__)
-								namespace ns = boost;	// MSC と Emscripte は std::regex_search で落ちるケースがあるのでとりあえずboostを使う
-#else
-								namespace ns = std;
-#endif
-								static const ns::regex re(R"(^([ \a\b\e\f\n\r\t\v]|　)+|([ \a\b\e\f\n\r\t\v]|　)+$)");	// "\s"は日本語でヘンになる
-								return ns::regex_replace(s, re, "");
-							};
 							if (auto result = stringTrim(decoded); !result.empty()) return result;
 							return std::nullopt;
 						};
 
 						switch (e->type) {
 						case midi::EventMeta::Type::sequenceName:
-							trackKey.sequenceName = name(e->getText()).value_or(TrackKey().sequenceName);
-							resultMapTrack[trackKey][metaChannel].insert(event);
+							if (!exists.sequenceName) {
+								exists.sequenceName = true;
+								smfTrack.sequenceName = name(e->getText()).value_or(smfTrack.sequenceName);
+							}
 							break;
 						case midi::EventMeta::Type::instrumentName:
-							trackKey.instrumentName = name(e->getText()).value_or(TrackKey().instrumentName);
-							resultMapTrack[trackKey][metaChannel].insert(event);
+							if (!exists.instrumentName) {
+								exists.instrumentName = true;
+								smfTrack.instrumentName = name(e->getText()).value_or(smfTrack.instrumentName);
+							}
 							break;
 						default:
-							resultMapTrack[trackKey][metaChannel].insert(event);
 							break;
 						}
+						smfTrack.mapEvents[metaChannel].insert(event);
 					} else if (auto e = std::dynamic_pointer_cast<const midi::EventSystemExclusive>(event.second)) {
-						resultMapTrack[trackKey][metaChannel].insert(event);
+						smfTrack.mapEvents[metaChannel].insert(event);
 					} else {
 						assert(false);
 					}
 				}
 
-				// meta用トラックは一番若いチャンネルの列に
-				for (auto& i : resultMapTrack) {
-					if (auto j = i.second.find(metaChannel); j != i.second.end()) {
-						Smf::Events& dstEvents = i.second.size() <= 1 ? (i.second)[0] : i.second.begin()->second;
-						auto& events = j->second;
-						for (auto k = events.rbegin(); k != events.rend(); k++) {
-							dstEvents.insert(dstEvents.lower_bound(k->first), *k);
-						}
-						i.second.erase(metaChannel);
+				// metaChannelは既存の一番若いchannelに合成
+				int targetCh = metaChannel;
+				for (auto& p : smfTrack.mapEvents) targetCh = std::min(targetCh, p.first);
+				if (targetCh == metaChannel) targetCh = 0;
+				auto& metaEvents = smfTrack.mapEvents[metaChannel];
+				for (auto it = metaEvents.rbegin(); it != metaEvents.rend(); it++) {
+					auto& map = smfTrack.mapEvents[targetCh];
+					auto i = map.lower_bound(it->first);
+					map.insert(i, *it);
+				}
+				smfTrack.mapEvents.erase(metaChannel);
+
+				tracks.emplace_back(std::move(smfTrack));
+			}
+			return tracks;
+		}(smf2);
+
+		{// 同名のSequenceNameには番号（ (1),(2)・・・ ）を付与する
+			std::set<std::string> used;
+			std::vector<decltype(smfTracks)::iterator> itList;
+			for (auto it = smfTracks.begin(); it != smfTracks.end(); it++) {
+				if (auto i = used.find(it->sequenceName); i == used.end()) {
+					used.insert(it->sequenceName);
+				} else {
+					itList.push_back(it);	// 重複したらキューに
+				}
+			}
+			for (auto it : itList) {
+				for (int n = 1; true; n++) {
+					auto candidate = string::format("%s(%d)", it->sequenceName, n);
+					if (auto i = used.find(candidate); i == used.end()) {
+						it->sequenceName = candidate;
+						used.insert(candidate);
+						break;
 					}
 				}
-
 			}
-			return resultMapTrack;
-		}(smf2);
+		}
 
 		std::string result;
 
-		for (auto& iMapTrack: mapTrack) {
-			const auto sequenceName = iMapTrack.first.sequenceName;
-			const auto needInstrumentName = [&]{	// 名前に InstrumentName を含める必要アリ（含めないと重複する）
-				int count = 0;
-				for (auto& i : mapTrack) {
-					if(i.first.sequenceName == sequenceName){
-						if (++count >= 2) return true;
-					}
-				}
-				return false;
-			}();
-			for (auto& iMapEvents : iMapTrack.second) {
-				const int channel = iMapEvents.first;
-				const auto needChannelName = iMapTrack.second.size() > 1;	// 名前に Channel を含める必要アリ（含めないと重複する）
-
-				const auto trackName = [&] {
-					std::string s(sequenceName);
-					if (needInstrumentName) {
-						s += "-" + iMapTrack.first.instrumentName;
-					}
-					if (needChannelName) {
-						s += string::format("-%02d", channel + 1);
-					}
-					return safeText(s);
-				}();
-
-				const auto instrument = [&] {
-					std::string s(iMapTrack.first.instrumentName);
-					if (s.empty()) return s;
-					return safeText(s);
-				}();
-
-				Smf::Events& events = iMapEvents.second;
-
-				const auto mml = makeMml(trackName, instrument, channel, events);
+		for (auto& smfTrack : smfTracks) {
+			for (auto it = smfTrack.mapEvents.begin(); it != smfTrack.mapEvents.end(); it++) {
+				const int channel = it->first;
+				std::string portName = smfTrack.sequenceName;
+				if (it != smfTrack.mapEvents.begin()) portName += string::format("-%02d", channel + 1);// 複数チャンネルの場合は ch を名前に含める
+				const auto mml = makeMml(portName, smfTrack.instrumentName, channel, it->second);
 				result += mml;
-
 			}
 		}
 

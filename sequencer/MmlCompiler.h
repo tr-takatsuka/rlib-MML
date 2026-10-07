@@ -64,12 +64,13 @@ namespace rlib::sequencer {
 				return std::make_shared<EventNote>(*this);
 			}
 		};
+		using EventList = std::multimap<size_t, std::shared_ptr<const EventBase>>;	// <position,Event>
 
 		struct Port {
 			std::string_view	name;			// name
 			std::string_view	instrument;		// instrument
-			uint8_t	channel = 0;		// チャンネル
-			std::multimap<size_t, std::shared_ptr<const EventBase>>	eventList;	// <position,Event>
+			uint8_t				channel = 0;	// チャンネル
+			EventList			eventList;		// <position,Event>
 		};
 		using Event = decltype(Port::eventList)::value_type;
 
@@ -98,6 +99,7 @@ namespace rlib::sequencer {
 			createPortError,				// CreatePort コマンドに誤りがあります
 			createPortPortNameError,		// CreatePort コマンドのポート名指定に誤りがあります
 			createPortDuplicateError,		// CreatePort コマンドでポート名が重複しています
+			createPortShadowError,			// Port コマンドで参照済みの親のPortと同名の Port を CreatePort しています
 			createPortChannelError,			// CreatePort コマンドのチャンネル指定に誤りがあります
 			portError,						// Port コマンドに誤りがあります
 			portNameError,					// Port コマンドのポート名指定に誤りがあります
@@ -115,6 +117,7 @@ namespace rlib::sequencer {
 			sequenceError,					// Sequence コマンドに誤りがあります
 			sequenceNameError,				// Sequence コマンドの名前指定に誤りがあります
 			sequenceLengthError,			// Sequence コマンドの length 指定に誤りがあります
+			sequenceRecursionError,			// Sequence コマンドが再帰呼び出し(無限ループ)になっています
 			metaError,						// Meta コマンドに誤りがあります
 			metaTypeError,					// Meta コマンドの type の指定に誤りがあります
 			sysExError,						// SysEx コマンドに誤りがあります
