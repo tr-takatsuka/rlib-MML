@@ -62,8 +62,8 @@ WebAssembly をサポートしています。
 
 |  表記  |  説明  |例|
 | ---- | ---- | ---- |
-|CreatePort(<br>&emsp;name:[ポート名],<br>&emsp;instrument:[楽器名]\(省略可),<br>&emsp;channel:[チャンネル番号],<br>)|ポートを定義(宣言)し、そのポートに切り替えます。<br>チャンネル番号は 1～16 です。<br>instrument を省略すると現在のinstrumentを引き継ぎます。|// "Piano"という名称でMIDIチャンネル3のポートを宣言し、切り替えます。<br>// instrument は楽器名を指定します。省略も可能です。<br>CreatePort(name:Piano, instrument:"fm", channel:3)|
-|Port([ポート名])|ポート切り替えです|// ポート"Piano" に切り替えてドレミです<br>Port(Piano) cde|
+|CreateTrack(<br>&emsp;name:[トラック名],<br>&emsp;instrument:[楽器名]\(省略可),<br>&emsp;channel:[チャンネル番号],<br>&emsp;port:[ポート番号]\(省略可),<br>)<br>別名 CreatePort (非推奨)|トラックを定義(宣言)し、そのトラックに切り替えます。<br>チャンネル番号は 1～16 です。<br>instrument を省略すると現在のinstrumentを引き継ぎます。<br>port は MIDI Port 番号(0～255)です。指定すると、SMF のトラックの先頭に MIDI Port メタイベント(FF 21 01 pp)を出力します。省略すると Port メタイベントは出力しません(`port:0` とは区別されます)。<br>別名 `CreatePort` は非推奨です(使用すると警告が報告されます)。|// "Piano"という名称でMIDIチャンネル3のトラックを宣言し、切り替えます。<br>// instrument は楽器名を指定します。省略も可能です。<br>CreateTrack(name:Piano, instrument:"fm", channel:3)<br><br>// MIDI Port 番号 1 のトラックを宣言(MIDI Port メタイベントを出力します)<br>CreateTrack(name:Lead, channel:1, port:1)|
+|Track([トラック名])<br>別名 Port (非推奨)|トラック切り替えです。<br>別名 `Port` は非推奨です(使用すると警告が報告されます)。|// トラック"Piano" に切り替えてドレミです<br>Track(Piano) cde|
 |V([音量値])<br>別名 Volume| 音量です。値は 0～127です。<br>相対指定が可能です。|// ボリューム120でドレミ、90でファソラです<br>V(120) cde V(-=30) fga|
 |Ep([値])<br>別名 Expression|エクスプレッションです。値は 0～127です。<br>相対指定が可能です。| // エクスプレッション120でドレミ、90でファソラです<br>Ep(120) cde Ep(-=30) fga|
 |Pan([パン値])<br>別名 Panpot| パン(パンポット)です。<br>値は 0(左端)～127(右端)で、中央は64です。<br>相対指定が可能です。| // パン10でドレミ、パン60でファソラです<br>Pan(10) cde Pan(+=50) fga|
@@ -71,9 +71,10 @@ WebAssembly をサポートしています。
 |FineTune([セント値])|FineTuneです。半音を100としたセント値を指定します。<br>値は -100.0～100.0で少数値をサポートします。中央は0です。<br>相対指定が可能です。|// 基準の音程から20.5セント上のドレミ、9.5セント下のドレミです<br>FineTune(20.5) cde FineTune(-=30) cde|
 |CoarseTune([値])|CoarseTuneです。半音単位でキーを調整します。<br>値は -64～63で、中央は0です。<br>相対指定が可能です。| // 基準の音程からキーを2つ上げたドレミ、1つ下げたドレミです<br>CoarseTune(2) cde CoarseTune(-=3) cde|
 |CC([コントロール番号],[値])<br>別名 ContorlChange| コントロールチェンジです。<br>第1引数がコントロール番号、第1引数が値です|// バンクセレクトしたプログラムチェンジです。<br>CC(0,10)CC(32,130)@2|
-|CreateSeq(<br>&emsp;name:[シーケンス名],<br>&emsp;mml:[MML],<br>&emsp;align:[単位(省略可)],<br>)<br>別名 CreateSequence|シーケンス(サブシーケンス)を定義します。<br>楽曲(MML)を部品として定義し、<br>以降のMMLの中で展開する(張り付ける)ことができます。<br>同じ名前のシーケンスを重ねて定義することはできません。<br>align を指定すると、Seq で現在位置が進む長さを、その単位の倍数に切り上げます(音長と同じ書式です)。<br>省略すると、シーケンスの中の位置そのまま進みます。| // ドラムパターンを定義します<br/>CreateSeq(name:drum, mml:"<br/>&emsp;CreatePort(name:kick, channel:10) l8 o1 c^^c ^c^^<br/>&emsp;CreatePort(name:snare, channel:10) l8 o1 ^^d^ ^^d^<br/>")<br/><br/>// 1小節単位で進むシーケンスを定義します<br/>CreateSeq(name:fill, mml:"c4 d4", align:"1")|
+|CreateSeq(<br>&emsp;name:[シーケンス名],<br>&emsp;mml:[MML],<br>&emsp;align:[単位(省略可)],<br>)<br>別名 CreateSequence|シーケンス(サブシーケンス)を定義します。<br>楽曲(MML)を部品として定義し、<br>以降のMMLの中で展開する(張り付ける)ことができます。<br>同じ名前のシーケンスを重ねて定義することはできません。<br>align を指定すると、Seq で現在位置が進む長さを、その単位の倍数に切り上げます(音長と同じ書式です)。<br>省略すると、シーケンスの中の位置そのまま進みます。| // ドラムパターンを定義します<br/>CreateSeq(name:drum, mml:"<br/>&emsp;CreateTrack(name:kick, channel:10) l8 o1 c^^c ^c^^<br/>&emsp;CreateTrack(name:snare, channel:10) l8 o1 ^^d^ ^^d^<br/>")<br/><br/>// 1小節単位で進むシーケンスを定義します<br/>CreateSeq(name:fill, mml:"c4 d4", align:"1")|
 |Seq(<br>&emsp;[シーケンス名],<br>&emsp;length:[長さ(省略可)]<br>)<br>別名 Sequence|定義済のシーケンス(サブシーケンス)を、現在位置に展開します。<br>length を省略すると、現在位置はシーケンスの長さ(CreateSeq の align を指定していれば、その倍数に切り上げた長さ)だけ進みます。<br>length を指定すると、その長さ以降にあるイベントは捨てられ、現在位置はその長さだけ進みます。<br>詳しくは [シーケンスの詳細](#シーケンスの詳細) を参照してください。| // 定義したドラムパターンを3回繰り返します。<br>// 3周目のシ－ケンスは2分音符分のみ採用します<br/>Seq(drum) Seq(drum) Seq(drum,length:"2")|
 |MasterVolume([値])|マスターボリュームです。値は 0～16383 です。相対指定が可能です。<br>システムエクスクルーシブのGMマスターボリュームの別名です| // マスターボリュームを10000にしたあと 1000 上げています<br/>MasterVolume(10000) r MasterVolume(+=1000)|
+|Meter(<br>&emsp;[分子],<br>&emsp;[分母],<br>&emsp;clock:[値]\(省略可),<br>&emsp;n32:[値]\(省略可),<br>)|現在位置に拍子(MIDI Time Signature メタイベント)を設定します。<br>分子(1～255)と分母(1,2,4,...128 の2のべき乗)は省略できません。<br>clock はメトロノーム1クリックあたりの MIDI クロック数(0～255、省略時 24)、n32 は4分音符あたりの32分音符数(0～255、省略時 8)です。<br>最初の Meter が現れるまでは 4/4 拍子です。`Meta(type:0x58,...)` と同じですが、より簡単に書けます。|// 4/4拍子のあと6/8拍子(付点4分音符でクリック)<br>Meter(4,4) cdefgabr Meter(6,8,clock:36) cdefga|
 |SysEx(<br>&emsp;[データ]...<br>)<br>|システムエクスルーシブです。<br>名前ナシの可変長引数でデータを指定します。<br>先頭バイトは 0xf0、0xf7 のいずれかを、末尾は（原則として）0xf7 を指定します| // Roland GS 音源をリセットします（GS Reset）<br/>SysEx(0xf0,0x41,0x10,0x42,0x12,0x40,0x00,0x7f,0x00,0x41,0xf7)|
 |Meta(<br>&emsp;type:[イベントタイプ],<br>&emsp;[データ]...<br>)|メタイベントです。<br>typeでイベントタイプを指定します。<br>名前ナシの可変長引数でデータを指定します。<br>データ長を記述する必要はありません。| // title 情報です<br/>Meta(type:0x1,"The Lost King's Scepter")<br>// SMPTE オフセットです。<br>Meta(type:0x54,96,0,0,0,0)|
 |DefinePresetFM(<br>&emsp;no:[プログラムナンバー],<br>&emsp;name:[音色名],<br>&emsp;[音色データ]...<br>)|rlib-MML でFM音源音色を定義するシーケンサー固有のメタイベントです。|DefinePresetFM(no:4, name:"piano",<br>// AR  DR  SR  RR  SL  TL KS  ML DT<br>   29,  8,  0,  8,  3, 31, 2,  1, 3,<br>   31,  3,  1,  6, 10,  0, 0,  2, 7,<br>   29, 20,  0,  9,  2, 44, 0,  4, 2,<br>   31,  7,  2,  6,  6,  0, 0,  1, 5,<br>// AL  FB<br>    4,  7,<br>)|
@@ -91,42 +92,42 @@ CreateSeq で定義したシーケンスは Seq で展開します。
 - シーケンスの中から、別のシーケンスを呼び出せます。
 - シーケンスの中で定義したシーケンスは、そのシーケンスの中(と、そこから呼び出すシーケンスの中)だけで使えます。
 
-### シーケンスの中のポート
+### シーケンスの中のトラック
 
-- Port(ポート名) で、呼び出した側のポートに切り替えて演奏できます。そのポートのオクターブ・デフォルト音長・ベロシティも引き継がれます。
-- シーケンスの中で CreatePort したポートは、そのシーケンスの中(と、そこから呼び出すシーケンスの中)だけで使えます。
+- Track(トラック名) で、呼び出した側のトラックに切り替えて演奏できます。そのトラックのオクターブ・デフォルト音長・ベロシティも引き継がれます。
+- シーケンスの中で CreateTrack したトラックは、そのシーケンスの中(と、そこから呼び出すシーケンスの中)だけで使えます。
 
 ````
 // リズムパターンA
 CreateSeq(name:drum, mml:"
-  Port(kick)   c ^ ^ c ^ c ^ ^   // 呼び出し元で定義されているPortに切り替えられます
-  Port(snare)  ^ ^ d ^ ^ ^ d ^
-  Port(hat)    f+f+f+f+f+f+f+f+
+  Track(kick)   c ^ ^ c ^ c ^ ^   // 呼び出し元で定義されているTrackに切り替えられます
+  Track(snare)  ^ ^ d ^ ^ ^ d ^
+  Track(hat)    f+f+f+f+f+f+f+f+
 ")
 
-CreatePort(name:kick,  channel:10)  l8 o1 v127
-CreatePort(name:snare, channel:10)  l8 o1 v105
-CreatePort(name:hat,   channel:10)  l8 o1 v125
+CreateTrack(name:kick,  channel:10)  l8 o1 v127
+CreateTrack(name:snare, channel:10)  l8 o1 v105
+CreateTrack(name:hat,   channel:10)  l8 o1 v125
 Seq(drum) Seq(drum) Seq(drum) Seq(drum) // リズムパターンをここに展開
 
 // ベース
-CreateSeq(name:baseE, mml:"o1 e^<e>e^e<e^") // ベースE (デフォルトでは呼び出し元のPortを引き継ぎます)
+CreateSeq(name:baseE, mml:"o1 e^<e>e^e<e^") // ベースE (デフォルトでは呼び出し元のTrackを引き継ぎます)
 CreateSeq(name:baseD, mml:"o1 d^<d>d^d<d^") // ベースD
 CreateSeq(name:baseC, mml:"o1 c^<c>c^c<c^") // ベースC
 CreateSeq(name:baseA, mml:"o0 a^<a>a^a<a^") // ベースA
 
-CreatePort(name:bass, channel:1) @33 v127 l8
+CreateTrack(name:bass, channel:1) @33 v127 l8
 Seq(baseE) Seq(baseD) Seq(baseC) Seq(baseA) // ベースE ⇒ D ⇒ C ⇒ A
 ````
 
 ### 展開する位置と進む長さ
 
-- シーケンスは、Seq を書いたポートの現在位置から展開されます。
-- Seq を書いたポートの現在位置が進む長さは、次の優先順位で決まります。
+- シーケンスは、Seq を書いたトラックの現在位置から展開されます。
+- Seq を書いたトラックの現在位置が進む長さは、次の優先順位で決まります。
   1. Seq の length を指定した場合: その長さだけ進みます。その長さ以降にあるイベントは捨てられます。
   2. CreateSeq の align を指定した場合: シーケンスの長さを、align の倍数になるまで切り上げた長さだけ進みます。ちょうど倍数ならそのままです。
   3. どちらも省略した場合: シーケンスの長さそのままです。
-- シーケンスの長さは、シーケンスの中で使われた全ポートの現在位置の最大値です。音符の終わりだけでなく、末尾の休符も含まれます。中身が空のシーケンスの長さは 0 で、現在位置は進みません。
+- シーケンスの長さは、シーケンスの中で使われた全トラックの現在位置の最大値です。音符の終わりだけでなく、末尾の休符も含まれます。中身が空のシーケンスの長さは 0 で、現在位置は進みません。
 - align は音長と同じ書式で指定します。`"1"` は全音符(4/4拍子の1小節)、`"4"` は4分音符、`"2."` は付点2分音符(3/4拍子の1小節)、`"!240"` はステップ数です。0 や書式の誤りはエラーで、CreateSeq の時点で検出されます。
 - align で切り上げるのは、Seq を呼び出した位置からの長さです。小節線にそろえるわけではありません。
 - 位置を進めないモード(`'`)では、Seq も現在位置を進めません。
@@ -170,37 +171,37 @@ Seq(Y,length:"4") e     // length が優先されるので、e は 480 の位置
 
 |  対象  |  現在値の持ち方  | 初期値 |
 | ---- | ---- | ---- |
-| v (ベロシティ) | ポートごと | 100 |
-| V (音量)<br>Ep (エクスプレッション)<br>Pan<br>PitchBend<br>FineTune<br>CoarseTune | ポートごと | V:100<br>Ep:127<br>Pan:64<br>PitchBend:0<br>FineTune:0<br>CoarseTune:0 |
+| v (ベロシティ) | トラックごと | 100 |
+| V (音量)<br>Ep (エクスプレッション)<br>Pan<br>PitchBend<br>FineTune<br>CoarseTune | トラックごと | V:100<br>Ep:127<br>Pan:64<br>PitchBend:0<br>FineTune:0<br>CoarseTune:0 |
 | t (テンポ) | 曲全体で1つ | 120 |
 | MasterVolume | 楽器(instrument)ごと | 16383 |
 
-- ポートごとの値は、楽器とチャンネルが同じでも、別のポートとは共有されません。
-- シーケンスの中で CreatePort したポートは、シーケンスを呼び出すたびに初期値から始まります。<br>Port(ポート名) で切り替えた呼び出し側のポートは、呼び出し側の値の続きになります。
-- テンポと MasterVolume は、どのポートに書いても曲の時間順に処理されます。同じ位置に複数ある場合は、ポートを定義した順です。
+- トラックごとの値は、楽器とチャンネルが同じでも、別のトラックとは共有されません。
+- シーケンスの中で CreateTrack したトラックは、シーケンスを呼び出すたびに初期値から始まります。<br>Track(トラック名) で切り替えた呼び出し側のトラックは、呼び出し側の値の続きになります。
+- テンポと MasterVolume は、どのトラックに書いても曲の時間順に処理されます。同じ位置に複数ある場合は、トラックを定義した順です。
 
 ```
-// 音量はポートごとです。b は a の 80 ではなく、初期値 100 に 10 を足して 110 になります。
-CreatePort(name:a, instrument:fm, channel:1) V(80) c
-CreatePort(name:b, instrument:fm, channel:1) V(+=10) c
+// 音量はトラックごとです。b は a の 80 ではなく、初期値 100 に 10 を足して 110 になります。
+CreateTrack(name:a, instrument:fm, channel:1) V(80) c
+CreateTrack(name:b, instrument:fm, channel:1) V(+=10) c
 ```
 
 ```
 // テンポは曲全体で1つです。
-// リタルダンド(だんだん遅く)を部品にして、別のポートから呼び出しています。
+// リタルダンド(だんだん遅く)を部品にして、別のトラックから呼び出しています。
 CreateSeq(name:rit, mml:"t-=10 r1 t-=10")
 
-CreatePort(name:melody, instrument:fm, channel:1) t100 l1 c d e
+CreateTrack(name:melody, instrument:fm, channel:1) t100 l1 c d e
 // 2小節目でテンポ90、3小節目でテンポ80 になります。
-CreatePort(name:conductor, instrument:fm, channel:16) r1 Seq(rit)
+CreateTrack(name:conductor, instrument:fm, channel:16) r1 Seq(rit)
 ```
 
 ```
 // MasterVolume は楽器ごとです。
 // fm は 8000 → 9000 になります。psg は初期値 16383 から 1000 を引いて 15383 になります。
-CreatePort(name:a, instrument:fm, channel:1) MasterVolume(8000)
-CreatePort(name:b, instrument:fm, channel:2) MasterVolume(+=1000)
-CreatePort(name:c, instrument:psg, channel:1) MasterVolume(-=1000)
+CreateTrack(name:a, instrument:fm, channel:1) MasterVolume(8000)
+CreateTrack(name:b, instrument:fm, channel:2) MasterVolume(+=1000)
+CreateTrack(name:c, instrument:psg, channel:1) MasterVolume(-=1000)
 ```
 
 

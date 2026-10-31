@@ -12,6 +12,7 @@ namespace rlib::midi {
 
 	class Smf {
 	public:
+		static constexpr int defaultTimeBase = 480;			// 分解能(4分音符あたりのカウント)
 		using Events = std::multimap<size_t, std::shared_ptr<const midi::Event>>;	// <position,Event>
 		using Event = Events::value_type;
 
@@ -20,7 +21,7 @@ namespace rlib::midi {
 			Events	events;
 		};
 	public:
-		int					timeBase = 480;			// 分解能(4分音符あたりのカウント)
+		int					timeBase = defaultTimeBase;		// 分解能(4分音符あたりのカウント)
 		std::list<Track>	tracks;
 	public:
 		Smf() {}

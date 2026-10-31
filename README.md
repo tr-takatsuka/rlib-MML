@@ -64,8 +64,8 @@ WebAssembly is also supported.
 
 |  表記  |  説明  |例|
 | ---- | ---- | ---- |
-|CreatePort(<br>&emsp;name:[port name],<br>&emsp;instrument:[instrument name]\(optional),<br>&emsp;channel:[channel number],<br>)|Defines (declares) a port and switches to it.<br>Channel numbers are 1-16.<br>If instrument is omitted, the current instrument is inherited.|// Declare the port of MIDI channel 3 with the name "Piano".<br>// "instrument" specifies the name of the instrument. It can be omitted.<br>CreatePort(name:Piano, instrument:"fm", channel:3)|
-|Port([port name])|It is port switching|// CDE at Port "Piano"<br>Port(Piano) cde|
+|CreateTrack(<br>&emsp;name:[track name],<br>&emsp;instrument:[instrument name]\(optional),<br>&emsp;channel:[channel number],<br>&emsp;port:[port number]\(optional),<br>)<br>alias: CreatePort (deprecated)|Defines (declares) a track and switches to it.<br>Channel numbers are 1-16.<br>If instrument is omitted, the current instrument is inherited.<br>port is the MIDI Port number (0-255). If specified, a MIDI Port meta event (FF 21 01 pp) is written at the beginning of the SMF track. If omitted, no Port meta event is written (this is different from `port:0`).<br>The alias `CreatePort` is deprecated (a warning is reported when it is used).|// Declare the track of MIDI channel 3 with the name "Piano".<br>// "instrument" specifies the name of the instrument. It can be omitted.<br>CreateTrack(name:Piano, instrument:"fm", channel:3)<br><br>// Declare a track with MIDI Port number 1 (outputs a MIDI Port meta event).<br>CreateTrack(name:Lead, channel:1, port:1)|
+|Track([track name])<br>alias: Port (deprecated)|It is track switching.<br>The alias `Port` is deprecated (a warning is reported when it is used).|// CDE at Track "Piano"<br>Track(Piano) cde|
 |V([volume value])<br>ailias: Volume| The Volume. Values ​​are 0-127.<br>Relative specification is supported.|// volume 120 it's CDE, 90 it's FGA<br>V(120) cde V(-=30) fga|
 |Ep([value])<br>ailias: Expression|The Expression. Values ​​are 0-127.<br>Relative specification is supported.|// Expression 120 it's CDE, 90 it's FGA.<br>Ep(120) cde Ep(-=30) fga|
 |Pan([pan value])<br>ailias: Panpot| It is pan (panpot).<br>Values ​​range from 0 (far left) to 127 (far right), with 64 in the center.<br>Relative specification is supported.|// CDE at Pan 10, FGA at Pan 60<br>Pan(10) cde Pan(+=50) fga|
@@ -73,9 +73,10 @@ WebAssembly is also supported.
 |FineTune([sent value])|FineTune.<br>Specify the cent value, with a semitone set to 100. The <br> value supports decimal values ranging from -100.0 to 100.0. The midpoint is 0.<br>Relative specification is supported.|// These are the notes CDE 20.5 cents<br>// above the reference pitch and 9.5 cents below it.<br>FineTune(20.5) cde FineTune(-=30) cde|
 |CoarseTune([value])|CoarseTune.<br>Adjust the key in semitones. The <br> value ranges from -64 to 63, with 0 being the center.<br>Relative specification is supported.|// These are the CDE, one two steps higher<br>// and one two steps lower than the standard pitch<br>CoarseTune(2) cde CoarseTune(-=3) cde|
 |CC([contorl change no],[value])<br>ailias: ContorlChange| Contorl change.<br>The first argument is the control number and the first argument is the value|// Bank-selected programme change.<br>CC(0,10)CC(32,130)@2|
-|CreateSeq(<br>&emsp;name:[sequence name],<br>&emsp;mml:[MML],<br>&emsp;align:[unit(optional)],<br>)<br>alias: CreateSequence|Defines a sequence (sub-sequence).<br>Define a piece of music (MML) as a part, which can then be expanded (pasted) in subsequent MML.<br>A sequence with the same name cannot be defined more than once.<br>If align is specified, the length by which Seq advances the current position is rounded up to a multiple of that unit (same notation as note length).<br>If omitted, the position advances by exactly the length of the sequence.|// Defined rhythm pattern<br/>CreateSeq(name:drum, mml:"<br/>&emsp;CreatePort(name:kick, channel:10) l8 o1 c^^c ^c^^<br/>  &emsp;CreatePort(name:snare, channel:10) l8 o1 ^^d^ ^^d^<br/>")<br/><br/>// Defines a sequence that advances in whole-bar units<br/>CreateSeq(name:fill, mml:"c4 d4", align:"1")|
+|CreateSeq(<br>&emsp;name:[sequence name],<br>&emsp;mml:[MML],<br>&emsp;align:[unit(optional)],<br>)<br>alias: CreateSequence|Defines a sequence (sub-sequence).<br>Define a piece of music (MML) as a part, which can then be expanded (pasted) in subsequent MML.<br>A sequence with the same name cannot be defined more than once.<br>If align is specified, the length by which Seq advances the current position is rounded up to a multiple of that unit (same notation as note length).<br>If omitted, the position advances by exactly the length of the sequence.|// Defined rhythm pattern<br/>CreateSeq(name:drum, mml:"<br/>&emsp;CreateTrack(name:kick, channel:10) l8 o1 c^^c ^c^^<br/>  &emsp;CreateTrack(name:snare, channel:10) l8 o1 ^^d^ ^^d^<br/>")<br/><br/>// Defines a sequence that advances in whole-bar units<br/>CreateSeq(name:fill, mml:"c4 d4", align:"1")|
 |Seq(<br>&emsp;[sequence name],<br>&emsp;length:[length(optional)]<br>)<br>alias: Sequence|Expands a defined sequence (sub-sequence) at the current position.<br>If length is omitted, the current position advances by the length of the sequence (rounded up to a multiple of align, if CreateSeq specified it).<br>If length is specified, events at or after that length are discarded, and the current position advances by exactly that length.<br>See [Sequence Details](#sequence-details) for more information.|// Defined rhythmic pattern is repeated three times.<br>//Only half-note minutes are used for the third round of the sequence.<br/>Seq(drum) Seq(drum) Seq(drum,length:"2")|
 |MasterVolume([value])|The Master Volume. Values ​​are 0-16383. Relative specification is supported.<br>This is an alias for the GM Master Volume in System Exclusive.|// Set the master volume to 10000, then raise it by 1000<br>MasterVolume(10000) r MasterVolume(+=1000)|
+|Meter(<br>&emsp;[numerator],<br>&emsp;[denominator],<br>&emsp;clock:[value]\(optional),<br>&emsp;n32:[value]\(optional),<br>)|Time signature (MIDI Time Signature meta event) at the current position.<br>The numerator (1-255) and the denominator (1, 2, 4, ... 128: a power of 2) cannot be omitted.<br>clock is the number of MIDI clocks per metronome click (0-255, default 24). n32 is the number of 32nd notes per quarter note (0-255, default 8).<br>Until the first Meter appears, the time signature is 4/4. Same as `Meta(type:0x58,...)`, but easier to write.|// 4/4, then 6/8 (click on a dotted quarter note)<br>Meter(4,4) cdefgabr Meter(6,8,clock:36) cdefga|
 |SysEx(<br>&emsp;[data]...<br>)<br>|It is SystemExclusive<br>Specify data with a variable-length argument with no name.<br>Specify either 0xf0 or 0xf7 as the first byte, and (generally) 0xf7 as the last byte.|// Reset Roland GS （GS Reset）<br/>SysEx(0xf0,0x41,0x10,0x42,0x12,0x40,0x00,0x7f,0x00,0x41,0xf7)|
 |Meta(<br>&emsp;type:[event type],<br>&emsp;[data]...<br>)|Meta Event.<br>type specifies the event type.<br>Specify data with a variable-length argument with no name. It is not necessary to describe the data length.| // title info<br/>Meta(type:0x1,"The Lost King's Scepter")// SMPTE offset<br>Meta(type:0x54,96,0,0,0,0)|
 |DefinePresetFM(<br>&emsp;no:[program no],<br>&emsp;name:[name],<br>&emsp;[data]...<br>)|Sequencer specific meta event that defines FM sound tone in rlib-MML.|DefinePresetFM(no:4, name:"piano",<br>// AR  DR  SR  RR  SL  TL KS  ML DT<br>&emsp;29,  8,  0,  8,  3, 31, 2,  1, 3,<br>&emsp;31,  3,  1,  6, 10,  0, 0,  2, 7,<br>&emsp;29, 20,  0,  9,  2, 44, 0,  4, 2,  <br>&emsp;31,  7,  2,  6,  6,  0, 0,  1, 5,<br>// AL  FB<br>&emsp;4,  7,<br>)|
@@ -91,42 +92,42 @@ A sequence defined with CreateSeq is expanded with Seq.
 - A sequence can call another sequence.
 - A sequence defined inside a sequence can be used only within that sequence (and within the sequences called from it).
 
-### Ports inside a sequence
+### Tracks inside a sequence
 
-- Port(port name) switches to a port of the caller so that you can play on it. That port's octave, default note length and velocity are also inherited.
-- A port created with CreatePort inside a sequence can be used only within that sequence (and within the sequences called from it).
+- Track(track name) switches to a track of the caller so that you can play on it. That track's octave, default note length and velocity are also inherited.
+- A track created with CreateTrack inside a sequence can be used only within that sequence (and within the sequences called from it).
 
 ````
 // Rhythm pattern A
 CreateSeq(name:drum, mml:"
- Port(kick)   c ^ ^ c ^ c ^ ^   // You can switch to a port defined by the caller
- Port(snare)  ^ ^ d ^ ^ ^ d ^
- Port(hat)    f+f+f+f+f+f+f+f+
+ Track(kick)   c ^ ^ c ^ c ^ ^   // You can switch to a track defined by the caller
+ Track(snare)  ^ ^ d ^ ^ ^ d ^
+ Track(hat)    f+f+f+f+f+f+f+f+
 ")
 
-CreatePort(name:kick,  channel:10)  l8 o1 v127
-CreatePort(name:snare, channel:10)  l8 o1 v105
-CreatePort(name:hat,   channel:10)  l8 o1 v125
+CreateTrack(name:kick,  channel:10)  l8 o1 v127
+CreateTrack(name:snare, channel:10)  l8 o1 v105
+CreateTrack(name:hat,   channel:10)  l8 o1 v125
 Seq(drum) Seq(drum) Seq(drum) Seq(drum) // Expand the rhythm pattern here
 
 // Bass
-CreateSeq(name:baseE, mml:"o1 e^<e>e^e<e^") // Bass E (by default, the caller's port is inherited)
+CreateSeq(name:baseE, mml:"o1 e^<e>e^e<e^") // Bass E (by default, the caller's track is inherited)
 CreateSeq(name:baseD, mml:"o1 d^<d>d^d<d^") // Bass D
 CreateSeq(name:baseC, mml:"o1 c^<c>c^c<c^") // Bass C
 CreateSeq(name:baseA, mml:"o0 a^<a>a^a<a^") // Bass A
 
-CreatePort(name:bass, channel:1) @33 v127 l8
+CreateTrack(name:bass, channel:1) @33 v127 l8
 Seq(baseE) Seq(baseD) Seq(baseC) Seq(baseA) // Bass E => D => C => A
 ````
 
 ### Where a sequence is expanded and how far the position advances
 
-- A sequence is expanded from the current position of the port in which Seq is written.
-- The current position of the port in which Seq is written advances by an amount determined in the following order of priority.
+- A sequence is expanded from the current position of the track in which Seq is written.
+- The current position of the track in which Seq is written advances by an amount determined in the following order of priority.
   1. If Seq specifies length: it advances by exactly that length. Events at or after that length are discarded.
   2. If CreateSeq specifies align: it advances by the length of the sequence rounded up to a multiple of align. If the length is already a multiple, it is used as is.
   3. If both are omitted: it advances by exactly the length of the sequence.
-- The length of a sequence is the maximum of the current positions of all ports used inside the sequence. It includes not only the end of the last note but also trailing rests. The length of an empty sequence is 0, so the current position does not advance.
+- The length of a sequence is the maximum of the current positions of all tracks used inside the sequence. It includes not only the end of the last note but also trailing rests. The length of an empty sequence is 0, so the current position does not advance.
 - align uses the same notation as note length. `"1"` is a whole note (one bar in 4/4), `"4"` is a quarter note, `"2."` is a dotted half note (one bar in 3/4), and `"!240"` is a number of steps. 0 or an invalid notation is an error, detected at the point of CreateSeq.
 - align rounds up the length measured from the position where Seq is called. It does not snap to bar lines.
 - In the mode that does not advance the position (`'`), Seq does not advance the current position either.
@@ -168,37 +169,37 @@ The current value used as the base for relative specification is held differentl
 
 | Target | Where the current value is held | Initial value |
 | ---- | ---- | ---- |
-| v (velocity) | Per port | 100 |
-| V (volume)<br>Ep (expression)<br>Pan<br>PitchBend<br>FineTune<br>CoarseTune | Per port | V:100<br>Ep:127<br>Pan:64<br>PitchBend:0<br>FineTune:0<br>CoarseTune:0 |
+| v (velocity) | Per track | 100 |
+| V (volume)<br>Ep (expression)<br>Pan<br>PitchBend<br>FineTune<br>CoarseTune | Per track | V:100<br>Ep:127<br>Pan:64<br>PitchBend:0<br>FineTune:0<br>CoarseTune:0 |
 | t (tempo) | One for the whole song | 120 |
 | MasterVolume | Per instrument | 16383 |
 
-- Per-port values are not shared with other ports, even if the instrument and channel are the same.
-- A port created with CreatePort inside a sequence starts from the initial values each time the sequence is called.<br>A caller's port switched to with Port(port name) continues from the caller's values.
-- Tempo and MasterVolume are processed in song-time order, regardless of which port they are written in. If several are at the same position, they are processed in the order the ports were defined.
+- Per-track values are not shared with other tracks, even if the instrument and channel are the same.
+- A track created with CreateTrack inside a sequence starts from the initial values each time the sequence is called.<br>A caller's track switched to with Track(track name) continues from the caller's values.
+- Tempo and MasterVolume are processed in song-time order, regardless of which track they are written in. If several are at the same position, they are processed in the order the tracks were defined.
 
 ```
-// Volume is held per port. b becomes 110 (the initial value 100 plus 10), not based on a's 80.
-CreatePort(name:a, instrument:fm, channel:1) V(80) c
-CreatePort(name:b, instrument:fm, channel:1) V(+=10) c
+// Volume is held per track. b becomes 110 (the initial value 100 plus 10), not based on a's 80.
+CreateTrack(name:a, instrument:fm, channel:1) V(80) c
+CreateTrack(name:b, instrument:fm, channel:1) V(+=10) c
 ```
 
 ```
 // Tempo is a single value for the whole song.
-// A ritardando (gradually slowing down) is defined as a part and called from another port.
+// A ritardando (gradually slowing down) is defined as a part and called from another track.
 CreateSeq(name:rit, mml:"t-=10 r1 t-=10")
 
-CreatePort(name:melody, instrument:fm, channel:1) t100 l1 c d e
+CreateTrack(name:melody, instrument:fm, channel:1) t100 l1 c d e
 // The tempo becomes 90 at the 2nd bar and 80 at the 3rd bar.
-CreatePort(name:conductor, instrument:fm, channel:16) r1 Seq(rit)
+CreateTrack(name:conductor, instrument:fm, channel:16) r1 Seq(rit)
 ```
 
 ```
 // MasterVolume is held per instrument.
 // fm goes 8000 -> 9000. psg becomes 15383 (the initial value 16383 minus 1000).
-CreatePort(name:a, instrument:fm, channel:1) MasterVolume(8000)
-CreatePort(name:b, instrument:fm, channel:2) MasterVolume(+=1000)
-CreatePort(name:c, instrument:psg, channel:1) MasterVolume(-=1000)
+CreateTrack(name:a, instrument:fm, channel:1) MasterVolume(8000)
+CreateTrack(name:b, instrument:fm, channel:2) MasterVolume(+=1000)
+CreateTrack(name:c, instrument:psg, channel:1) MasterVolume(-=1000)
 ```
 
 
