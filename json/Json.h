@@ -60,6 +60,7 @@ JSON パーサーです。C++11～C++20をサポートしています。
 */
 #pragma once
 
+#include <algorithm>
 #include <cassert>
 #include <cmath>
 #include <codecvt>
@@ -78,7 +79,7 @@ namespace rlib
 	public:
 		// version (major, minor, patch)
 		static std::tuple<int, int, int> version() {
-			return std::make_tuple(1, 0, 4);
+			return std::make_tuple(1, 0, 5);
 		}
 		enum class Type {
 			Null,		// null (デフォルト)
@@ -260,6 +261,7 @@ namespace rlib
 			case Type::String:	m_string.~TypeString();	break;
 			case Type::Array:	m_array.~Array();		break;
 			case Type::Map:		m_map.~Map();			break;
+			default:								break;
 			}
 			m_type = Type::Null;
 		}
@@ -377,6 +379,7 @@ namespace rlib
 			switch (m_type) {
 			case Type::Bool:	return m_bool;
 				//case Type::Int:	return static_cast<T>(m_bool);
+			default:			break;
 			}
 			return decltype(m_bool)();
 		}
@@ -385,6 +388,7 @@ namespace rlib
 			switch (m_type) {
 			case Type::Float:	return static_cast<U>(m_float);
 			case Type::Int:		return static_cast<U>(m_int);
+			default:			break;
 			}
 			return decltype(m_float)();
 		}
@@ -394,6 +398,7 @@ namespace rlib
 			case Type::Bool:	return m_bool;
 			case Type::Float:	return static_cast<U>(std::llroundl(m_float));
 			case Type::Int:		return static_cast<U>(m_int);
+			default:			break;
 			}
 			return decltype(m_int)();
 		}
@@ -425,51 +430,51 @@ namespace rlib
 				: text(s)
 				, tokens(
 					[&s]()->decltype(tokens) {
-						using std::string;
-						try {
-							if (s.empty()) return { true,{} };
-							const auto tokens = [&] {					// "/" で分割したトークン配列
-								static const std::regex re("/");
-								const auto t = std::string(s) + "/";	// 末尾の情報も必要なのでセパレータ追加
-								return std::vector<string>{ std::sregex_token_iterator(t.cbegin(), t.cend(), re, -1), std::sregex_token_iterator() };
-							}();
-							auto j = parse(							// jsonパース処理を使う
-								[&tokens] {
-									string json;
-									for (auto& s : tokens) {
-										string r;
-										for (auto it = s.cbegin(); it != s.cend();) {
-											std::smatch m;
-											static const std::regex re(R"(\~.?)");
-											if (!regex_search(it, s.cend(), m, re)) {		// "~" escape
-												r += string(it, s.cend());
-												break;
-											}
-											static const std::map<string, string> mapReplace{
-												{ R"(~0)",	R"(~)"},
-												{ R"(~1)",	R"(\/)"},
-											};
-											const auto i = mapReplace.find(m[0].str());
-											if (i == mapReplace.end()) throw std::out_of_range("invalid key");
-											r += string(it, m[0].first) + i->second;
-											it = m[0].second;
-										}
-										json += "\"" + r + "\",";
-									}
-									return "[" + json + "]";
-								}());
-							if (!j.isType(Type::Array) || j.template get<Array>().size() <= 0) throw std::out_of_range("invalid key");	// failsae
-							const auto& a = j.template get<Array>();
-							if (!a[0].template get<string>().empty()) throw std::out_of_range("invalid key");	// 先頭の/の前に文字がある場合はNG
-							std::vector<string> v;
-							for (size_t i = 1; i < a.size(); i++) {
-								v.push_back(a[i].template get<string>());
+				using std::string;
+				try {
+					if (s.empty()) return { true,{} };
+					const auto tokens = [&] {					// "/" で分割したトークン配列
+						static const std::regex re("/");
+						const auto t = std::string(s) + "/";	// 末尾の情報も必要なのでセパレータ追加
+						return std::vector<string>{ std::sregex_token_iterator(t.cbegin(), t.cend(), re, -1), std::sregex_token_iterator() };
+					}();
+					auto j = parse(							// jsonパース処理を使う
+						[&tokens] {
+						string json;
+						for (auto& s : tokens) {
+							string r;
+							for (auto it = s.cbegin(); it != s.cend();) {
+								std::smatch m;
+								static const std::regex re(R"(\~.?)");
+								if (!regex_search(it, s.cend(), m, re)) {		// "~" escape
+									r += string(it, s.cend());
+									break;
+								}
+								static const std::map<string, string> mapReplace{
+									{ R"(~0)",	R"(~)" },
+									{ R"(~1)",	R"(\/)" },
+								};
+								const auto i = mapReplace.find(m[0].str());
+								if (i == mapReplace.end()) throw std::out_of_range("invalid key");
+								r += string(it, m[0].first) + i->second;
+								it = m[0].second;
 							}
-							return { true,v };
-						} catch (...) {
+							json += "\"" + r + "\",";
 						}
-						return { false,{} };
-					}())
+						return "[" + json + "]";
+					}());
+					if (!j.isType(Type::Array) || j.template get<Array>().size() <= 0) throw std::out_of_range("invalid key");	// failsae
+					const auto& a = j.template get<Array>();
+					if (!a[0].template get<string>().empty()) throw std::out_of_range("invalid key");	// 先頭の/の前に文字がある場合はNG
+					std::vector<string> v;
+					for (size_t i = 1; i < a.size(); i++) {
+						v.push_back(a[i].template get<string>());
+					}
+					return { true,v };
+				} catch (...) {
+				}
+				return { false,{} };
+			}())
 			{}
 #ifdef __cpp_lib_char8_t
 			Pointer(const std::u8string_view& s)
@@ -676,23 +681,23 @@ namespace rlib
 
 					static const std::map<string, std::function<void(State&)>> mapToken{
 
-						{"//", [](State& state) {		// コメント
+						{ "//", [](State& state) {		// コメント
 							std::match_results<stringtype::const_iterator> m;
 							if (!regex_search(state.it, state.json.cend(), m, std::regex(".*(\n|$)"))) {		// 改行まで
 								throw ParseException("", state.json, state.it);
 							}
 							state.it = m[0].second;
-						}},
+						} },
 
-						{"/*", [](State& state) {		// コメント
+						{ "/*", [](State& state) {		// コメント
 							std::match_results<stringtype::const_iterator> m;
 							if (!regex_search(state.it, state.json.cend(), m, std::regex(R"(\*\/)"))) {		// 閉じるまで
 								throw ParseException("", state.json, state.it);
 							}
 							state.it = m[0].second;
-						}},
+						} },
 
-						{"{", [](State& state) {		// オブジェクト開始
+						{ "{", [](State& state) {		// オブジェクト開始
 							auto& parent = **state.parents.rbegin();
 							if (parent.isType(Type::Array)) {				// 配列の中の要素なら
 								auto& v = parent[parent.m_array.size()];	// 要素を追加
@@ -705,21 +710,21 @@ namespace rlib
 							state.flags.all = 0;
 							state.flags.objectKey = 1;						// 次トークン(オブジェクトのキー)
 							state.flags.end = 1;							// 次トークン(オブジェクト終了)
-						}},
+						} },
 
-						{":", [](State& state) {		// オブジェクトのキーの後のコロン
+						{ ":", [](State& state) {		// オブジェクトのキーの後のコロン
 							state.flags.all = 0;						// 次トークン
 							state.flags.bBegin = true;					// オブジェクトあるいは配列の開始
 							state.flags.value = 1;						// オブジェクトの中の値
-						}},
+						} },
 
-						{"}", [](State& state) {		// オブジェクト終了
+						{ "}", [](State& state) {		// オブジェクト終了
 							auto& parent = **state.parents.rbegin();
 							if (!parent.isType(Type::Map)) throw ParseException("", state.json, state.it);
 							state.setEnd();
-						}},
+						} },
 
-						{"[", [](State& state) {		// 配列開始
+						{ "[", [](State& state) {		// 配列開始
 							auto& parent = **state.parents.rbegin();
 							if (parent.isType(Type::Array)) {				// 配列の中の要素なら
 								auto& v = parent[parent.m_array.size()];	// 要素を追加
@@ -733,15 +738,15 @@ namespace rlib
 							state.flags.bBegin = true;					// オブジェクトあるいは配列の開始
 							state.flags.value = 2;						// 配列の中の値
 							state.flags.end = 3;						// 配列終了
-						}},
+						} },
 
-						{"]", [](State& state) {		// 配列終了
+						{ "]", [](State& state) {		// 配列終了
 							auto& parent = **state.parents.rbegin();
 							if (!parent.isType(Type::Array)) throw ParseException("", state.json, state.it);
 							state.setEnd();
 						} },
 
-						{",", [](State& state) {		// カンマ
+						{ ",", [](State& state) {		// カンマ
 							switch (state.flags.end) {
 							case 2:										// オブジェクト終了あるいはカンマ
 								state.flags.all = 0;								// 次トークン
@@ -756,21 +761,21 @@ namespace rlib
 								return;
 							}
 							throw ParseException("", state.json, state.it);
-						}},
+						} },
 
-						{"true", [](State& state) {		// true
+						{ "true", [](State& state) {		// true
 							state.setValue(JsonT(true));
-						}},
+						} },
 
-						{"false", [](State& state) {	// false
+						{ "false", [](State& state) {	// false
 							state.setValue(JsonT(false));
-						}},
+						} },
 
-						{"null", [](State& state) {		// null
+						{ "null", [](State& state) {		// null
 							state.setValue(JsonT(nullptr));
-						}},
+						} },
 
-						{"\"", [](State& state) {		// 文字列
+						{ "\"", [](State& state) {		// 文字列
 							const string sText = [&]() {			// 文字列デコード
 								string result;
 								static const std::regex re("^(.*?)"	"("			// (1) (2)
@@ -788,14 +793,14 @@ namespace rlib
 
 									if (m[6].length() > 0) {				// エスケープ文字
 										static const std::map<string, string> mapReplace{
-											{ R"(\")",	"\""},
-											{ R"(\\)",	"\\"},
-											{ R"(\/)",	"/"	},
-											{ R"(\b)",	"\b"},
-											{ R"(\f)",	"\f"},
-											{ R"(\n)",	"\n"},
-											{ R"(\r)",	"\r"},
-											{ R"(\t)",	"\t"},
+											{ R"(\")",	"\"" },
+											{ R"(\\)",	"\\" },
+											{ R"(\/)",	"/" },
+											{ R"(\b)",	"\b" },
+											{ R"(\f)",	"\f" },
+											{ R"(\n)",	"\n" },
+											{ R"(\r)",	"\r" },
+											{ R"(\t)",	"\t" },
 										};
 										const auto i = mapReplace.find(m[6].str());
 										if (i == mapReplace.end()) throw ParseException("", state.json, state.it);
@@ -814,12 +819,12 @@ namespace rlib
 #ifdef _MSC_VER
 #pragma warning(push)
 #pragma warning(disable : 4996)
-									const string su8 = std::wstring_convert<std::codecvt_utf8_utf16<uint16_t>, uint16_t>().to_bytes(reinterpret_cast<const uint16_t*>(su16.c_str()));	// UTF16 → UTF8
+									const string su8 = std::wstring_convert<std::codecvt_utf8_utf16<uint16_t>, uint16_t>().to_bytes(reinterpret_cast<const uint16_t*>(su16.data()), reinterpret_cast<const uint16_t*>(su16.data() + su16.size()));	// UTF16 → UTF8 (範囲指定。c_str() だと \u0000 で終端と見なされて空になる)
 #pragma warning(pop)
 #else
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-									const string su8 = std::wstring_convert<std::codecvt_utf8_utf16<char16_t>, char16_t>().to_bytes(su16.c_str());	// UTF16 → UTF8
+									const string su8 = std::wstring_convert<std::codecvt_utf8_utf16<char16_t>, char16_t>().to_bytes(su16.data(), su16.data() + su16.size());	// UTF16 → UTF8 (範囲指定。c_str() だと \u0000 で終端と見なされて空になる)
 #pragma GCC diagnostic pop
 #endif
 									result += su8;
@@ -839,7 +844,7 @@ namespace rlib
 							}
 
 							state.setValue(JsonT(sText));
-						}},
+						} },
 
 					};
 					const auto i = mapToken.find(sToken);
@@ -851,16 +856,16 @@ namespace rlib
 					// それ以外は数値
 					state.setValue(
 						[&] {
-							std::smatch m;
-							static const std::regex r("^-?[0-9]+$");
-							if (regex_search(sToken, m, r)) {	// 整数なら
-								try {
-									return JsonT(static_cast<intmax_t>(stoll(sToken)));
-								} catch (const std::exception&) {
-								}
+						std::smatch m;
+						static const std::regex r("^-?[0-9]+$");
+						if (regex_search(sToken, m, r)) {	// 整数なら
+							try {
+								return JsonT(static_cast<intmax_t>(stoll(sToken)));
+							} catch (const std::exception&) {
 							}
-							return JsonT(stod(sToken));			// doubleで処理
-						}());
+						}
+						return JsonT(stod(sToken));			// doubleで処理
+					}());
 
 				}//while(true)
 			} catch (const std::exception& e) {
@@ -909,49 +914,33 @@ namespace rlib
 		friend std::ostream& operator<<(std::ostream& os, const Stringify& t) {
 			using std::string;
 			struct F {
-				static std::pair<std::regex, std::vector<string>> getReplaceStringRegex(const std::vector<std::pair<string, string>>& t) {
-					assert(!t.empty());
-					std::vector<string> v;
-					string re;
-					for (auto& i : t) {
-						re += "(" + i.first + ")|";
-						v.push_back(i.second);
-					}
-					re.pop_back();	// 末尾の "|" を削除
-					return { std::regex(re) ,v };
-				};
-
-				static string replaceString(const string& s, const std::pair<std::regex, std::vector<string>>& rr) {
+				static string escape(const string& s) {	// 文字列エスケープ処理
+					if (std::none_of(s.begin(), s.end(), [](char c) { return static_cast<unsigned char>(c) < 0x20 || c == '"' || c == '\\' || c == '/'; })) return s;	// エスケープが必要な文字がなければそのまま返す(高速化)
 					string r;
-					for (auto it = s.cbegin(); it != s.cend();) {
-						std::smatch m;
-						if (!regex_search(it, s.cend(), m, rr.first)) {
-							r += string(it, s.cend());
-							break;
-						}
-						for (size_t i = 1; i < m.size(); i++) {
-							auto& submatch = m[i];
-							if (!submatch.matched) continue;
-							r += string(it, m[i].first) + rr.second[i - 1];
-							it = m[i].second;
+					r.reserve(s.size());
+					for (const char c : s) {
+						switch (c) {
+						case '"':	r += R"(\")";	break;
+						case '\\':	r += R"(\\)";	break;
+						case '/':	r += R"(\/)";	break;
+						case '\b':	r += R"(\b)";	break;
+						case '\f':	r += R"(\f)";	break;
+						case '\n':	r += R"(\n)";	break;
+						case '\r':	r += R"(\r)";	break;
+						case '\t':	r += R"(\t)";	break;
+						default:
+							if (static_cast<unsigned char>(c) < 0x20) {	// その他の制御文字(0x00～0x1F)は \u00XX
+								static const char hex[] = "0123456789abcdef";
+								r += R"(\u00)";
+								r += hex[(static_cast<unsigned char>(c) >> 4) & 0xf];
+								r += hex[static_cast<unsigned char>(c) & 0xf];
+							} else {
+								r += c;
+							}
 							break;
 						}
 					}
 					return r;
-				};
-
-				static string escape(const string& s) {	// 文字列エスケープ処理
-					static const auto rr = getReplaceStringRegex({
-							{"\\\"",	R"(\")"	},
-							{"\\\\",	R"(\\)" },
-							{"\\/",		R"(\/)" },
-							{"\\\b",	R"(\b)" },
-							{"\\\f",	R"(\f)" },
-							{"\\\n",	R"(\n)" },
-							{"\\\r",	R"(\r)" },
-							{"\\\t",	R"(\t)" },
-						});
-					return replaceString(s, rr);
 				};
 
 				static void f(std::ostream& os, const JsonT& j, const typename Stringify::Format& f, const std::string& depth) {

@@ -22,6 +22,8 @@ add_executable ( ${CMAKE_PROJECT_NAME}
 	"../sequencer/MmlToSmf.h"
 	"../sequencer/Smf.cpp"
 	"../sequencer/Smf.h"
+	"../sequencer/Timeline.h"
+	"../sequencer/MeterList.h"
 	"../sequencer/SmfToMml.h"
 	"../sequencer/TempoList.h"
 	"../stringformat/StringFormat.h"

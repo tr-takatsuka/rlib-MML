@@ -8,34 +8,25 @@ namespace rlib {
 		static constexpr int timeBase = 480;	// 分解能(4分音符あたりのカウント)
 
 		struct Element {
-			uint64_t	position = 0;	// 位置
+			uint64_t	tick = 0;	// 位置
 			T			tempo = 120.0;	// テンポ
-			T			time = 0.0;		// 時間(秒)
+			T			sec = 0.0;		// 時間(秒)
 
 			Element()
 			{}
-			Element(uint64_t position_, T tempo_)
-				:position(position_)
+			Element(uint64_t tick_, T tempo_)
+				: tick(tick_)
 				, tempo(tempo_)
 			{}
 
 			bool operator==(const Element& s)const {
-				return position == s.position && tempo == s.tempo && time == s.time;
+				return tick == s.tick && tempo == s.tempo && sec == s.sec;
 			}
 			bool operator!=(const Element& s)const {
 				return !(*this == s);
 			}
 		};
-		struct LessPosition {
-			bool operator()(const Element& a, const Element& b)				const { return a.position < b.position; }
-			bool operator()(decltype(Element::position) a, const Element& b)const { return a < b.position; }
-			bool operator()(const Element& a, decltype(Element::position) b)const { return a.position < b; }
-		};
-		struct LessTime {
-			bool operator()(const Element& a, const Element& b)			const { return a.time < b.time; }
-			bool operator()(decltype(Element::time) a, const Element& b)const { return a < b.time; }
-			bool operator()(const Element& a, decltype(Element::time) b)const { return a.time < b; }
-		};
+
 		typedef std::vector<Element> List;
 
 		bool operator==(const TempoListT& s)const {
@@ -60,8 +51,8 @@ namespace rlib {
 
 		// Tempo 挿入
 		void insert(uint64_t position, T tempo) {
-			const auto i = m_list.insert(												// m_listPos に追加
-				std::upper_bound(m_list.begin(), m_list.end(), position, LessPosition()),	// 対象の値を超える最初
+			const auto i = m_list.insert(											// m_listPos に追加
+				std::upper_bound(m_list.begin(), m_list.end(), position, lessTick),	// 対象の値を超える最初
 				Element(position, tempo));
 			updateTime(i);	// time 更新
 		}
@@ -83,26 +74,29 @@ namespace rlib {
 		//	}
 		//}
 
-		// 時間(秒)から位置(position)とテンポを取得
-		std::pair<uint64_t, T> getPositionAndTempo(T time)const {		// return pair<step,テンポ>
-			const auto i = std::upper_bound(m_list.begin(), m_list.end(), time, LessTime());
+		// 時間(秒)から位置(tick)とテンポを取得(端数は切り捨て)
+		auto getPositionAndTempo(T sec)const {
+			sec += static_cast<T>(1e-9);	// 浮動小数点誤差で 1tick ずれないよう微小値を加える
+			const auto i = std::upper_bound(m_list.begin(), m_list.end(), sec, lessSec);
 			Element tempoDefault;
 			const Element& t = i == m_list.begin() ? tempoDefault : *(i - 1);
-			return std::make_pair(
-				t.position + static_cast<uint64_t>((time - t.time) * getCountPerSec(t.tempo)),
-				t.tempo);
+			struct Result {
+				uint64_t tick;
+				T tempo;
+			};
+			return Result{ t.tick + static_cast<uint64_t>((sec - t.sec) * getCountPerSec(t.tempo)) ,t.tempo };
 		}
 
-		// 位置(count)から時間(秒)を取得
-		T getTime(uint64_t position)const {
-			const auto i = getUpperBound(position);
+		// 位置(tick)から時間(秒)を取得
+		T getTime(uint64_t tick)const {
+			const auto i = getUpperBound(tick);
 			Element tempoDefault;
 			const Element& t = i == m_list.begin() ? tempoDefault : *(i - 1);
-			return t.time + ((position - t.position) * getSecPerCount(t.tempo));
+			return t.sec + ((tick - t.tick) * getSecPerCount(t.tempo));
 		}
 
-		std::pair<typename List::const_iterator, typename List::const_iterator> getEqualRange(uint64_t position)const {
-			return std::make_pair(getLowerBound(position), getUpperBound(position));
+		std::pair<typename List::const_iterator, typename List::const_iterator> getEqualRange(uint64_t tick)const {
+			return std::make_pair(getLowerBound(tick), getUpperBound(tick));
 		}
 
 		const List& list()const {
@@ -118,22 +112,24 @@ namespace rlib {
 			return static_cast<T>(60.0) / (tempo * static_cast<T>(timeBase));
 		}
 	private:
+		static bool lessTick(decltype(Element::tick) a, const Element& b) { return a < b.tick; }
+		static bool lessSec(decltype(Element::sec) a, const Element& b) { return a < b.sec; }
 
 		// 位置取得 (lower_bound:対象の値以上の最初を指す)
-		typename List::const_iterator getLowerBound(uint64_t position)const {
-			return std::lower_bound(m_list.begin(), m_list.end(), position, LessPosition());
+		typename List::const_iterator getLowerBound(uint64_t tick)const {
+			return std::lower_bound(m_list.begin(), m_list.end(), tick, lessTick);
 		}
 
 		// 位置取得 (upper_bound:対象の値を超える最初を指す)
-		typename List::const_iterator getUpperBound(uint64_t position)const {
-			return std::upper_bound(m_list.begin(), m_list.end(), position, LessPosition());
+		typename List::const_iterator getUpperBound(uint64_t tick)const {
+			return std::upper_bound(m_list.begin(), m_list.end(), tick, lessTick);
 		}
 
 		void updateTime(typename List::iterator i) {	// time 更新
 			Element tempoDefault;
 			Element* pBefore = i == m_list.begin() ? &tempoDefault : &*(i - 1);
 			for (; i != m_list.end(); i++) {
-				i->time = pBefore->time + (i->position - pBefore->position) * getSecPerCount(pBefore->tempo);
+				i->sec = pBefore->sec + (i->tick - pBefore->tick) * getSecPerCount(pBefore->tempo);
 				pBefore = &*i;
 			}
 		}

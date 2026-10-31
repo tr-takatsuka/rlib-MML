@@ -135,7 +135,7 @@ namespace rlib::midi {
 			:EventCh(channel), note(note_), pressure(pressure_)
 		{}
 		virtual std::vector<uint8_t> smfBytes() const {
-			return std::vector<uint8_t>{static_cast<uint8_t>(statusByte | (note & 0xf)), static_cast<uint8_t>(pressure & 0x7f)};
+			return std::vector<uint8_t>{static_cast<uint8_t>(statusByte | (channel & 0xf)), static_cast<uint8_t>(note & 0x7f), static_cast<uint8_t>(pressure & 0x7f)};
 		}
 	};
 

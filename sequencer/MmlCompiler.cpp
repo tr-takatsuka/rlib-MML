@@ -103,13 +103,14 @@ std::string MmlCompiler::Result::getMessage(ErrorCode code) {
 		{ErrorCode::octaveUpDownCommandError,		u8R"(オクターブアップダウン（ < , > コマンド）に誤りがあります)"},
 		{ErrorCode::octaveUpDownRangeCommandError,	u8R"(オクターブ値が範囲外です)"},
 		{ErrorCode::tieCommandError,				u8R"(タイ（^ コマンド）に誤りがあります)"},
-		{ErrorCode::createPortError,				u8R"(CreatePort コマンドに誤りがあります)"},
-		{ErrorCode::createPortPortNameError,		u8R"(CreatePort コマンドのポート名指定に誤りがあります)"},
-		{ErrorCode::createPortDuplicateError,		u8R"(CreatePort コマンドでポート名が重複しています)"},
-		{ErrorCode::createPortShadowError,			u8R"(Port コマンドで参照済みの親のPortと同名の Port を CreatePort しています)"},
-		{ErrorCode::createPortChannelError,			u8R"(CreatePort コマンドのチャンネル指定に誤りがあります)"},
-		{ErrorCode::portError,						u8R"(Port コマンドに誤りがあります)"},
-		{ErrorCode::portNameError,					u8R"(Port コマンドのポート名指定に誤りがあります)"},
+		{ErrorCode::createTrackError,				u8R"(CreateTrack コマンドに誤りがあります)"},
+		{ErrorCode::createTrackTrackNameError,		u8R"(CreateTrack コマンドのトラック名指定に誤りがあります)"},
+		{ErrorCode::createTrackDuplicateError,		u8R"(CreateTrack コマンドでトラック名が重複しています)"},
+		{ErrorCode::createTrackShadowError,			u8R"(Track コマンドで参照済みの親のTrackと同名の Track を CreateTrack しています)"},
+		{ErrorCode::createTrackChannelError,		u8R"(CreateTrack コマンドのチャンネル指定に誤りがあります)"},
+		{ ErrorCode::createTrackPortError,			u8R"(CreateTrack コマンドの port 指定に誤りがあります(0～255))" },
+		{ErrorCode::trackError,						u8R"(Track コマンドに誤りがあります)"},
+		{ErrorCode::trackNameError,					u8R"(Track コマンドのトラック名指定に誤りがあります)"},
 		{ErrorCode::volumeError,					u8R"(Volume コマンドの指定に誤りがあります)"},
 		{ErrorCode::volumeRangeError,				u8R"(Volume コマンドの値が範囲外です)"},
 		{ErrorCode::panError,						u8R"(Pan コマンドの指定に誤りがあります)"},
@@ -144,8 +145,22 @@ std::string MmlCompiler::Result::getMessage(ErrorCode code) {
 		{ErrorCode::definePresetPSGError,			u8R"(DefinePresetPSG コマンドに誤りがあります)"},
 		{ErrorCode::definePresetPSGNoError,			u8R"(DefinePresetPSG コマンドのプログラムナンバー指定に誤りがあります)"},
 		{ErrorCode::definePresetPSGRangeError,		u8R"(DefinePresetPSG コマンドの値が範囲外です)"},
+		{ErrorCode::meterError,						u8R"(Meter コマンドに誤りがあります。書式は Meter(分子,分母,clock:24,n32:8) です(分子・分母は省略不可))"},
+		{ErrorCode::meterRangeError,				u8R"(Meter コマンドの値が範囲外です。分子は1～255、分母は1,2,4,8,16,32,64,128、clock と n32 は0～255 で指定してください)"},
 		{ErrorCode::unknownError,					u8R"(解析出来ない書式です)"},
 		{ErrorCode::stdEexceptionError,				u8R"(std::excption エラーです)"},
+	};
+	if (auto i = m.find(code); i != m.end()) {
+		return std::string(reinterpret_cast<const char*>(i->second.data()), i->second.size());
+	}
+	assert(false);
+	return "unknown";
+}
+
+std::string MmlCompiler::Result::getMessage(WarningCode code) {
+	static const std::map<WarningCode, std::u8string> m = {
+		{WarningCode::deprecatedPortCommand,		u8R"(Port コマンドは非推奨です。Track コマンドを使用してください)"},
+		{WarningCode::deprecatedCreatePortCommand,	u8R"(CreatePort コマンドは非推奨です。CreateTrack コマンドを使用してください)"},
 	};
 	if (auto i = m.find(code); i != m.end()) {
 		return std::string(reinterpret_cast<const char*>(i->second.data()), i->second.size());
@@ -164,6 +179,36 @@ std::string MmlCompiler::Result::getText(const std::vector<Result::Error>& error
 		result += string::format("%d:%d error %03d: %s '%s'", pos.line, pos.column, static_cast<size_t>(err.code), msg, errorText);
 	}
 	return result;
+}
+
+std::string MmlCompiler::Result::getText(const std::vector<Result::Warning>& warnings) const {
+	std::string result;
+	for (const auto& w : warnings) {
+		const auto pos = getLineColumn(*mml, w.text);				// 行と列を取得
+		const auto msg = MmlCompiler::Result::getMessage(w.code);	// 警告メッセージ取得
+		const auto warnText = getTextPrefix(w.text, 10);			// 警告箇所のMML
+		result += result.empty() ? "" : "\n";
+		result += string::format("%d:%d warning %03d: %s '%s'", pos.line, pos.column, static_cast<size_t>(w.code), msg, warnText);
+	}
+	return result;
+}
+
+std::string MmlCompiler::Result::getJson(const std::vector<Result::Warning>& warnings) const {
+	Json json;
+	auto& list = json.ensureMap()["warnings"].ensureArray();
+	for (const auto& w : warnings) {
+		const auto pos = getLineColumn(*mml, w.text);				// 行と列を取得
+		const auto msg = MmlCompiler::Result::getMessage(w.code);	// 警告メッセージ取得
+		const auto warnText = getTextPrefix(w.text, 10);			// 警告箇所のMML
+		list.push_back(
+			Json::Map{
+				{"code",	static_cast<size_t>(w.code)},
+				{"line",	pos.line},
+				{"column",	pos.column},
+				{"message",	string::format("%s '%s'", msg, warnText)},
+			});
+	}
+	return json.stringify();
 }
 
 std::string MmlCompiler::Result::getJson(const std::vector<Result::Error>& errors) const {
@@ -880,41 +925,43 @@ public:
 	};
 	using SequenceSet = std::set<Sequence, LessName>;
 
-	struct PortInfo {
+	struct TrackInfo {
 		const size_t			depth = 0;
-		const std::string_view	name;					// Port名
+		const std::string_view	name;					// Track名
 		const std::string_view	instrument;				// instrument
 		const uint8_t			channel = 0;			// チャンネル
-		const size_t			serial = 0;				// 生成順(Portが生成された順に採番。出力時の並び順に使う)
+		const std::optional<uint8_t>	port;			// MIDI Port(0～255)。省略(std::nullopt)と 0 は別物
+		const size_t			serial = 0;				// 生成順(Trackが生成された順に採番。出力時の並び順に使う)
 
 		size_t					defaultStep = 480;		// デフォルト音長(step)
 		int						octave = 4;				// 現在のオクターブ( -2 ～ 8 )
 		double					velocity = 100.0;		// 現在のベロシティ(0～127)
 	};
-	using PortInfoSet = std::set<PortInfo, LessName>;
+	using TrackInfoSet = std::set<TrackInfo, LessName>;
 
 	struct MmlToEventsParams {
 		std::reference_wrapper<const std::vector<std::string_view>>	callStack;	// 呼び出し中のSequence名(ルートは空名"")。size()が階層の深さ
 		const std::string_view						mml;
 		std::reference_wrapper<const SequenceSet>	sequenceSet;
-		std::reference_wrapper<const PortInfoSet>	portInfoSet;
-		PortInfoSet::const_iterator					currentPort;
-		std::reference_wrapper<size_t>				portSerial;	// Port生成順の採番用カウンタ(再帰呼び出し間で共有)
+		std::reference_wrapper<const TrackInfoSet>	trackInfoSet;
+		TrackInfoSet::const_iterator				currentTrack;
+		std::reference_wrapper<size_t>				trackSerial;	// Track生成順の採番用カウンタ(再帰呼び出し間で共有)
+		std::reference_wrapper<std::vector<Result::Warning>>	warnings;	// 警告の蓄積先(再帰呼び出し間で共有。エラーで中断しても失われない)
 		size_t depth() const { return callStack.get().size(); }
 	};
 	struct MmlToEventsResult {
-		struct ResPort : public Port {
+		struct ResTrack : public Track {
 			size_t depth;
 			size_t serial;	// 生成順
 		};
-		std::vector<ResPort>	ports;
+		std::vector<ResTrack>	tracks;
 		size_t					endPosition = 0;	// 終了位置
 	};
 	static MmlToEventsResult mmlToEvents(const MmlToEventsParams& params) {
 		// 中間イベント処理関数
 		struct Convert {
-			// 中間イベント処理。Port毎に独立して処理される。Portの状態は既定値から始まる。
-			static void portEvents(EventList& eventList) {
+			// 中間イベント処理。Track毎に独立して処理される。Trackの状態は既定値から始まる。
+			static void trackEvents(EventList& eventList) {
 				struct ConvState {
 					double expression = 127.0;		// エクスプレッション (0.0～127.0)
 					double volume = 100.0;			// ボリューム (0.0～127.0)
@@ -1020,20 +1067,20 @@ public:
 				}
 			}
 
-			// Port を跨いで値を引き継ぐ中間イベントを最終イベントへ変換する(ルートで全Portが揃った後に1回だけ呼ぶ)
+			// Track を跨いで値を引き継ぐ中間イベントを最終イベントへ変換する(ルートで全Trackが揃った後に1回だけ呼ぶ)
 			//   Tempo        : 曲全体で1つの値を引き継ぐ
-			//   MasterVolume : 同じ instrument の全Portで1つの値を引き継ぐ
-			// 全Portのイベントを (位置, Portの並び順, Port内のイベント順) の順に処理する
-			static void globalEvents(std::vector<MmlToEventsResult::ResPort>& ports) {
+			//   MasterVolume : 同じ instrument の全Trackで1つの値を引き継ぐ
+			// 全Trackのイベントを (位置, Trackの並び順, Track内のイベント順) の順に処理する
+			static void globalEvents(std::vector<MmlToEventsResult::ResTrack>& tracks) {
 				struct Target {
 					EventList::iterator	it;
 					std::string_view	instrument;
 				};
 				std::multimap<size_t, Target> targets;
-				for (auto& port : ports) {
-					for (auto it = port.eventList.begin(); it != port.eventList.end(); ++it) {
+				for (auto& track : tracks) {
+					for (auto it = track.eventList.begin(); it != track.eventList.end(); ++it) {
 						const auto& id = typeid(*it->second);
-						if (id == typeid(InterTempo) || id == typeid(InterMasterVolume)) targets.emplace(it->first, Target{ it, port.instrument });
+						if (id == typeid(InterTempo) || id == typeid(InterMasterVolume)) targets.emplace(it->first, Target{ it, track.instrument });
 					}
 				}
 				double tempo = 120.0;							// テンポ(曲全体)
@@ -1062,24 +1109,31 @@ public:
 			}
 		};
 
-		struct PortState : public PortInfo {
+		struct TrackState : public TrackInfo {
 			size_t						position = 0;			// 現在の位置
 			std::shared_ptr<EventNote>	beforeEvent;			// 直前の音符( ^の対象)
 			bool						noteUnmove = false;		// Noteで現在位置を進めないモード
-			bool						referenced = false;		// Port コマンドで(親から引き継いだPortとして)参照された
+			bool						referenced = false;		// Track コマンドで(親から引き継いだTrackとして)参照された
 			EventList					eventList;				// 出力 <position,Event>
 		};
 		struct State {
 			const MmlToEventsParams& params;
 			SequenceSet						sequenceSet;
-			std::set<PortState, LessName>	portStateSet;
-			decltype(portStateSet)::iterator currentPort;
-			std::vector<MmlToEventsResult::ResPort>	resultPorts;		// 結果Port
-			size_t							maxPosition = 0;	// portStateSet から外れたPort(隠蔽された親のPort)の終了位置の最大値
+			std::set<TrackState, LessName>	trackStateSet;
+			decltype(trackStateSet)::iterator currentTrack;
+			std::vector<MmlToEventsResult::ResTrack>	resultTracks;		// 結果Track
+			size_t							maxPosition = 0;	// trackStateSet から外れたTrack(隠蔽された親のTrack)の終了位置の最大値
 			std::vector<Result::Error>		errors;
-			PortState& getCurrentPort() {
-				return const_cast<PortState&>(*currentPort);
+			TrackState& getCurrentTrack() {
+				return const_cast<TrackState&>(*currentTrack);
 			};
+			void addWarning(WarningCode code, const std::string_view& text) {	// 同じ位置・同じコードの警告は(Seq の再展開などで)重複させない
+				auto& list = params.warnings.get();
+				const bool exists = std::any_of(list.begin(), list.end(), [&](const Result::Warning& x) {
+					return x.code == code && x.text.data() == text.data();
+				});
+				if (!exists) list.push_back({ code, text });
+			}
 			void addErrors(const std::vector<Result::Error>& errs) {	// 重複(同じ位置・同じコード)を除いて追記
 				for (const auto& e : errs) {
 					const bool exists = std::any_of(errors.begin(), errors.end(), [&](const Result::Error& x) {
@@ -1089,7 +1143,7 @@ public:
 				}
 			}
 		}state{ params };
-		state.currentPort = state.portStateSet.insert(PortState{ *params.currentPort }).first;
+		state.currentTrack = state.trackStateSet.insert(TrackState{ *params.currentTrack }).first;
 
 		struct Parser {
 			ErrorCode errorCode;
@@ -1102,13 +1156,13 @@ public:
 				const auto r = isStartsWith(text, '^');
 				if (!r) return std::nullopt;
 				auto next = skipComment(*r);				// コメントを読み飛ばす
-				auto& port = state.getCurrentPort();
-				const auto len = parseLength(next, port.defaultStep);
-				if (port.beforeEvent) {						// 直前の音符があれば
-					port.beforeEvent->length += len.step;	// 音符の音長に足す
+				auto& track = state.getCurrentTrack();
+				const auto len = parseLength(next, track.defaultStep);
+				if (track.beforeEvent) {					// 直前の音符があれば
+					track.beforeEvent->length += len.step;	// 音符の音長に足す
 				}
-				if (!port.noteUnmove || !port.beforeEvent) {
-					port.position += len.step;
+				if (!track.noteUnmove || !track.beforeEvent) {
+					track.position += len.step;
 				}
 				return len.next;
 			}},
@@ -1118,10 +1172,10 @@ public:
 				const auto r = isStartsWith(text, 'r');
 				if (!r) return std::nullopt;
 				auto next = skipComment(*r);				// コメントを読み飛ばす
-				auto& port = state.getCurrentPort();
-				const auto len = parseLength(next, port.defaultStep);
-				port.position += len.step;
-				port.beforeEvent.reset();				// '^'の対象をクリア
+				auto& track = state.getCurrentTrack();
+				const auto len = parseLength(next, track.defaultStep);
+				track.position += len.step;
+				track.beforeEvent.reset();				// '^'の対象をクリア
 				return len.next;
 			}},
 
@@ -1133,8 +1187,8 @@ public:
 				if (!m) return std::nullopt;
 				auto next = std::string_view((*m)[0].second, text.end());
 				next = skipComment(next);			// コメントを読み飛ばす
-				auto& port = state.getCurrentPort();
-				const auto len = parseLength(next, port.defaultStep);
+				auto& track = state.getCurrentTrack();
+				const auto len = parseLength(next, track.defaultStep);
 				auto e = std::make_shared<EventNote>();
 				e->note = [&] {
 					static const std::map<std::string, int> noteTable{
@@ -1147,7 +1201,7 @@ public:
 						{"b",	11},{"b-",	10},{"b+",	12},
 					};
 					if (auto i = noteTable.find((*m)[0].str()); i != noteTable.end()) {
-						int note = (port.octave + 2) * 12 + i->second;
+						int note = (track.octave + 2) * 12 + i->second;
 						if (note >= 0 && note <= 127) return note;		// 範囲チェック
 					}
 					throw MmlException(ErrorCode::noteCommandRangeError, text);
@@ -1168,31 +1222,31 @@ public:
 				}
 				auto next = text.substr(noteLen);
 				next = skipComment(next);			// コメントを読み飛ばす
-				auto& port = state.getCurrentPort();
-				const auto len = parseLength(next, port.defaultStep);
+				auto& track = state.getCurrentTrack();
+				const auto len = parseLength(next, track.defaultStep);
 				auto e = std::make_shared<EventNote>();
 				e->note = [&] {
-					const int note = (port.octave + 2) * 12 + baseNote[c - 'a'] + accidental;
+					const int note = (track.octave + 2) * 12 + baseNote[c - 'a'] + accidental;
 					if (note >= 0 && note <= 127) return note;		// 範囲チェック
 					throw MmlException(ErrorCode::noteCommandRangeError, text);
 				}();
 #endif
 				e->length = len.step;
-				e->velocity = std::clamp(static_cast<int>(std::lround(port.velocity)), 0, 127);
-				port.eventList.emplace(port.position, e);
-				if (!port.noteUnmove) {
-					port.position += len.step;
+				e->velocity = std::clamp(static_cast<int>(std::lround(track.velocity)), 0, 127);
+				track.eventList.emplace(track.position, e);
+				if (!track.noteUnmove) {
+					track.position += len.step;
 				}
-				port.beforeEvent = std::move(e);
+				track.beforeEvent = std::move(e);
 				return len.next;
 			}},
 
 			// < > オクターブUPDOWN
 			{ErrorCode::octaveUpDownCommandError,[](State& state,const std::string_view& text)->std::optional<std::string_view> {
 				const auto check = [&](int n) {
-					auto& port = state.getCurrentPort();
-					port.octave += n;
-					if (port.octave < -2 || port.octave > 8) {	// 範囲チェック
+					auto& track = state.getCurrentTrack();
+					track.octave += n;
+					if (track.octave < -2 || track.octave > 8) {	// 範囲チェック
 						throw MmlException(ErrorCode::octaveUpDownRangeCommandError, text);
 					}
 				};
@@ -1219,8 +1273,8 @@ public:
 				} else {								// 相対指定なら
 					if (vel < -127 || vel > 127) throw MmlException(ErrorCode::vCommandRangeError, r2->matched);
 				}
-				auto& port = state.getCurrentPort();
-				port.velocity = r2->apply(port.velocity);
+				auto& track = state.getCurrentTrack();
+				track.velocity = r2->apply(track.velocity);
 				return r2->next;
 			}},
 
@@ -1233,9 +1287,9 @@ public:
 				if (!octave || octave->value < -2 || octave->value > 8) {
 					throw MmlException(ErrorCode::oCommandRangeError, text);
 				}
-				auto& port = state.getCurrentPort();
-				port.octave = octave->value;
-				port.beforeEvent.reset();				// '^'の対象をクリア
+				auto& track = state.getCurrentTrack();
+				track.octave = octave->value;
+				track.beforeEvent.reset();				// '^'の対象をクリア
 				return octave->next;
 			}},
 
@@ -1244,9 +1298,9 @@ public:
 				const auto r = isStartsWith(text, 'l');
 				if (!r) return std::nullopt;
 				auto next = skipComment(*r);			// コメントを読み飛ばす
-				auto& port = state.getCurrentPort();
-				const auto len = parseLength(next, port.defaultStep);
-				port.defaultStep = len.step;
+				auto& track = state.getCurrentTrack();
+				const auto len = parseLength(next, track.defaultStep);
+				track.defaultStep = len.step;
 				return len.next;
 			}},
 
@@ -1254,9 +1308,9 @@ public:
 			{ErrorCode::unknownError,[](State& state,const std::string_view& text)->std::optional<std::string_view> {
 				const auto r = isStartsWith(text, '\'');
 				if (!r) return std::nullopt;
-				auto& port = state.getCurrentPort();
-				port.noteUnmove = !port.noteUnmove;		// 反転
-				port.beforeEvent.reset();				// '^'の対象をクリア
+				auto& track = state.getCurrentTrack();
+				track.noteUnmove = !track.noteUnmove;		// 反転
+				track.beforeEvent.reset();				// '^'の対象をクリア
 				return *r;
 			}},
 
@@ -1267,10 +1321,10 @@ public:
 				auto next = skipComment(*r);			// コメントを読み飛ばす
 				const auto programNo = parseNumber<unsigned int>(next);
 				if (!programNo || programNo->value > 127) throw MmlException(ErrorCode::programchangeCommandError, next);
-				auto& port = state.getCurrentPort();
+				auto& track = state.getCurrentTrack();
 				auto e = std::make_shared<EventProgramChange>();
 				e->programNo = static_cast<decltype(e->programNo)>(programNo->value);
-				port.eventList.emplace(port.position, e);
+				track.eventList.emplace(track.position, e);
 				return programNo->next;
 			}},
 
@@ -1289,8 +1343,8 @@ public:
 				}
 				auto e = std::make_shared<InterTempo>();
 				e->assign = *r2;
-				auto& port = state.getCurrentPort();
-				port.eventList.emplace(port.position, e);
+				auto& track = state.getCurrentTrack();
+				track.eventList.emplace(track.position, e);
 				return r2->next;
 			}},
 
@@ -1301,7 +1355,7 @@ public:
 				const auto next = args->parse([&](const auto& argKey, const std::string_view& argValue) {
 					if (auto argIndex = std::get_if<std::size_t>(&argKey)) {
 						if (*argIndex > 0) throw MmlException(MmlCompiler::ErrorCode::argumentError, argValue);	// 名前ナシ引数は1つまで
-						auto& port = state.getCurrentPort();
+						auto& track = state.getCurrentTrack();
 						const auto r = ParseNum::parse(argValue, true);
 						if (!r) throw MmlException(MmlCompiler::ErrorCode::volumeRangeError, argValue);
 						if (r->ope == ParseNum::Ope::Set) {	// 絶対指定なら
@@ -1313,7 +1367,7 @@ public:
 						}
 						auto e = std::make_shared<InterVolume>();
 						e->assign = *r;
-						port.eventList.emplace(port.position, e);
+						track.eventList.emplace(track.position, e);
 						return r->next;
 					}
 					assert(false);
@@ -1329,7 +1383,7 @@ public:
 				const auto next = args->parse([&](const auto& argKey, const std::string_view& argValue) {
 					if (auto argIndex = std::get_if<std::size_t>(&argKey)) {
 						if (*argIndex > 0) throw MmlException(MmlCompiler::ErrorCode::argumentError, argValue);	// 名前ナシ引数は1つまで
-						auto& port = state.getCurrentPort();
+						auto& track = state.getCurrentTrack();
 						const auto r = ParseNum::parse(argValue, true);
 						if (!r) throw MmlException(MmlCompiler::ErrorCode::expressionRangeError, argValue);
 						if (r->ope == ParseNum::Ope::Set) {	// 絶対指定なら
@@ -1341,7 +1395,7 @@ public:
 						}
 						auto e = std::make_shared<InterExpression>();
 						e->assign = *r;
-						port.eventList.emplace(port.position, e);
+						track.eventList.emplace(track.position, e);
 						return r->next;
 					}
 					assert(false);
@@ -1367,11 +1421,11 @@ public:
 				if (no < 0 || no > 127 || val < 0 || val > 127) {
 					throw MmlException(ErrorCode::controlChangeRangeError, text);
 				}
-				auto& port = state.getCurrentPort();
+				auto& track = state.getCurrentTrack();
 				auto e = std::make_shared<EventControlChange>();
 				e->no = static_cast<decltype(e->no)>(no);
 				e->value = static_cast<decltype(e->value)>(val);
-				port.eventList.emplace(port.position, e);
+				track.eventList.emplace(track.position, e);
 				return r->next;
 			}},
 
@@ -1382,7 +1436,7 @@ public:
 				const auto next = args->parse([&](const auto& argKey, const std::string_view& argValue) {
 					if (auto argIndex = std::get_if<std::size_t>(&argKey)) {
 						if (*argIndex > 0) throw MmlException(MmlCompiler::ErrorCode::argumentError, argValue);	// 名前ナシ引数は1つまで
-						auto& port = state.getCurrentPort();
+						auto& track = state.getCurrentTrack();
 						const auto r = ParseNum::parse(argValue);
 						if (!r) throw MmlException(MmlCompiler::ErrorCode::pitchBendRangeError, argValue);
 						if (r->ope == ParseNum::Ope::Set) {	// 絶対指定なら
@@ -1394,7 +1448,7 @@ public:
 						}
 						auto e = std::make_shared<InterPitchBend>();
 						e->assign = *r;
-						port.eventList.emplace(port.position, e);
+						track.eventList.emplace(track.position, e);
 						return r->next;
 					}
 					assert(false);
@@ -1410,7 +1464,7 @@ public:
 				const auto next = args->parse([&](const auto& argKey, const std::string_view& argValue) {
 					if (auto argIndex = std::get_if<std::size_t>(&argKey)) {
 						if (*argIndex > 0) throw MmlException(MmlCompiler::ErrorCode::argumentError, argValue);	// 名前ナシ引数は1つまで
-						auto& port = state.getCurrentPort();
+						auto& track = state.getCurrentTrack();
 						const auto r = ParseNum::parse(argValue, true);
 						if (!r) throw MmlException(MmlCompiler::ErrorCode::panRangeError, argValue);
 						if (r->ope == ParseNum::Ope::Set) {	// 絶対指定なら
@@ -1422,7 +1476,7 @@ public:
 						}
 						auto e = std::make_shared<InterPan>();
 						e->assign = *r;
-						port.eventList.emplace(port.position, e);
+						track.eventList.emplace(track.position, e);
 						return r->next;
 					}
 					assert(false);
@@ -1431,52 +1485,59 @@ public:
 				return next;
 			}},
 
-			// Port
-			{ErrorCode::portError,[](State& state,const std::string_view& text)->std::optional<std::string_view> {
-				auto r = parseFunction(text, { "Port" }, {});
+			// Track
+			{ErrorCode::trackError,[](State& state,const std::string_view& text)->std::optional<std::string_view> {
+				auto r = parseFunction(text, { "Track", "Port" }, {});	// "Port" は非推奨の別名(互換維持)
 				if (!r) return std::nullopt;
+				if (r->functionName == "Port") state.addWarning(WarningCode::deprecatedPortCommand, r->functionName);
 				const auto name = (*r).findArgString(0).value_or("");
-				if (name.empty()) throw MmlException(ErrorCode::portNameError, text);
-				auto it = state.portStateSet.find(name);
-				if (it == state.portStateSet.end()) {			// 存在しないなら
-					const auto i = state.params.portInfoSet.get().find(name);	// 親から検索
-					if (i == state.params.portInfoSet.get().end()) throw MmlException(ErrorCode::portNameError, text);	// それでも存在しないならエラー
-					it = state.portStateSet.insert(PortState(*i)).first;
+				if (name.empty()) throw MmlException(ErrorCode::trackNameError, text);
+				auto it = state.trackStateSet.find(name);
+				if (it == state.trackStateSet.end()) {			// 存在しないなら
+					const auto i = state.params.trackInfoSet.get().find(name);	// 親から検索
+					if (i == state.params.trackInfoSet.get().end()) throw MmlException(ErrorCode::trackNameError, text);	// それでも存在しないならエラー
+					it = state.trackStateSet.insert(TrackState(*i)).first;
 				}
-				if (it->depth < state.params.depth()) const_cast<PortState&>(*it).referenced = true;	// 親のPortを参照した(以降、同名の CreatePort は意味が変わるのでエラー)
-				state.currentPort = it;		// 成功してから代入する(エラー時に currentPort が end() にならないように)
+				if (it->depth < state.params.depth()) const_cast<TrackState&>(*it).referenced = true;	// 親のTrackを参照した(以降、同名の CreateTrack は意味が変わるのでエラー)
+				state.currentTrack = it;		// 成功してから代入する(エラー時に currentTrack が end() にならないように)
 				return r->next;
 			}},
 
-			// CreatePort
-			{ErrorCode::createPortError,[](State& state,const std::string_view& text)->std::optional<std::string_view> {
-				const auto r = parseFunction(text, { "CreatePort" }, { "name","instrument","channel" });
+			// CreateTrack
+			{ErrorCode::createTrackError,[](State& state,const std::string_view& text)->std::optional<std::string_view> {
+				const auto r = parseFunction(text, { "CreateTrack", "CreatePort" }, { "name","instrument","channel","port" });	// "CreatePort" は非推奨の別名(互換維持)
 				if (!r) return std::nullopt;
+				if (r->functionName == "CreatePort") state.addWarning(WarningCode::deprecatedCreatePortCommand, r->functionName);
 				const auto name = (*r).findArgString("name").value_or("");
-				if (name.empty()) throw MmlException(ErrorCode::createPortPortNameError, text);
-				const auto instrument = (*r).findArgString("instrument").value_or(state.getCurrentPort().instrument);	// 省略したらカレントのinstrumentを採用する
+				if (name.empty()) throw MmlException(ErrorCode::createTrackTrackNameError, text);
+				const auto instrument = (*r).findArgString("instrument").value_or(state.getCurrentTrack().instrument);	// 省略したらカレントのinstrumentを採用する
 				const auto ch = r->findArg<uintmax_t>("channel").second;
-				if (!ch || *ch < 1 || *ch > 16) throw MmlException(ErrorCode::createPortChannelError, text);
-				if (const auto it = state.portStateSet.find(name); it != state.portStateSet.end()) {	// 既に存在してる？
-					if (it->depth >= state.params.depth()) throw MmlException(ErrorCode::createPortDuplicateError, text); // それが親の持ち物ではないなら、同名が構築済としてエラー
-					if (it->referenced) throw MmlException(ErrorCode::createPortShadowError, text);	// 親のPortとして参照済みの名前を作り直すと、同じ名前が位置で別のPortを指すのでエラー
-					auto nh = state.portStateSet.extract(it);
+				if (!ch || *ch < 1 || *ch > 16) throw MmlException(ErrorCode::createTrackChannelError, text);
+				std::optional<uint8_t> port;		// 省略は Port なし (port:0 とは別)
+				if (const auto pa = r->findArg<uintmax_t>("port"); pa.first) {
+					if (!pa.second || *pa.second > 255) throw MmlException(ErrorCode::createTrackPortError, text);	// 数値でない / 負数 / 範囲外
+					port = static_cast<uint8_t>(*pa.second);
+				}
+				if (const auto it = state.trackStateSet.find(name); it != state.trackStateSet.end()) {	// 既に存在してる？
+					if (it->depth >= state.params.depth()) throw MmlException(ErrorCode::createTrackDuplicateError, text); // それが親の持ち物ではないなら、同名が構築済としてエラー
+					if (it->referenced) throw MmlException(ErrorCode::createTrackShadowError, text);	// 親のTrackとして参照済みの名前を作り直すと、同じ名前が位置で別のTrackを指すのでエラー
+					auto nh = state.trackStateSet.extract(it);
 					auto& p = nh.value();
-					state.maxPosition = std::max(state.maxPosition, p.position);	// 外れるPortの位置も終了位置の対象
-					state.resultPorts.emplace_back(MmlToEventsResult::ResPort{ p.name, p.instrument, p.channel, std::move(p.eventList), p.depth, p.serial });
+					state.maxPosition = std::max(state.maxPosition, p.position);	// 外れるTrackの位置も終了位置の対象
+					state.resultTracks.emplace_back(MmlToEventsResult::ResTrack{ std::string(p.name), std::string(p.instrument), p.channel, p.port, std::move(p.eventList), p.depth, p.serial });
 				}
 				const auto channel = static_cast<uint8_t>(*ch - 1);
-				// resultPorts に溜まっている 同name,同instrument,同channel のPortがあれば、それを引き継ぐ(1つのPortに結合する)
+				// resultTracks に溜まっている 同name,同instrument,同channel,同port のTrackがあれば、それを引き継ぐ(1つのTrackに結合する)
 				std::optional<EventList> adopted;
 				size_t serial = 0;
-				if (const auto ri = std::find_if(state.resultPorts.begin(), state.resultPorts.end(), [&](const auto& rp) { return rp.name == name && rp.instrument == instrument && rp.channel == channel; }); ri != state.resultPorts.end()) {
+				if (const auto ri = std::find_if(state.resultTracks.begin(), state.resultTracks.end(), [&](const auto& rp) { return rp.name == name && rp.instrument == instrument && rp.channel == channel && rp.port == port; }); ri != state.resultTracks.end()) {
 					adopted = std::move(ri->eventList);
-					serial = ri->serial;	// 最初に生成されたPortの生成順を保つ
-					state.resultPorts.erase(ri);
+					serial = ri->serial;	// 最初に生成されたTrackの生成順を保つ
+					state.resultTracks.erase(ri);
 				}
-				if (!adopted) serial = state.params.portSerial.get()++;
-				state.currentPort = state.portStateSet.emplace(PortState({ PortInfo({ state.params.depth(), name, instrument, channel, serial }) })).first;	// port追加
-				if (adopted) const_cast<EventList&>(state.currentPort->eventList) = std::move(*adopted);
+				if (!adopted) serial = state.params.trackSerial.get()++;
+				state.currentTrack = state.trackStateSet.emplace(TrackState({ TrackInfo({ state.params.depth(), name, instrument, channel, port, serial }) })).first;	// track追加
+				if (adopted) const_cast<EventList&>(state.currentTrack->eventList) = std::move(*adopted);
 				return r->next;
 			}},
 
@@ -1493,7 +1554,7 @@ public:
 					if (!arg.first) return 0;	// 指定ナシ(Seq内のPositionそのまま)
 					if (!arg.second) throw MmlException(ErrorCode::createSequenceError, text);	// 型が違う
 					const auto& alignText = *arg.second;
-					const auto len = parseLength(alignText, state.getCurrentPort().defaultStep);	// 音長と同じ書式 (例: "1"=全音符,"4"=4分音符,"2."=付点2分音符)
+					const auto len = parseLength(alignText, state.getCurrentTrack().defaultStep);	// 音長と同じ書式 (例: "1"=全音符,"4"=4分音符,"2."=付点2分音符)
 					if ((len.next.data() - alignText.data()) != alignText.size() || len.step == 0) throw MmlException(ErrorCode::createSequenceError, text);	// 余計な文字列がある / 0
 					return len.step;
 				}();
@@ -1521,14 +1582,14 @@ public:
 				auto callStack = state.params.callStack.get();
 				for (auto& c : callStack) if (c.data() == seq.name.data()) throw MmlException(ErrorCode::sequenceRecursionError, text);	// 無限再帰チェック
 				callStack.push_back(seq.name);	// 子に渡すcallStack(自分を追加)
-				auto& port = state.getCurrentPort();
+				auto& track = state.getCurrentTrack();
 
 				const auto length = [&]()->std::optional<size_t> {
 					const auto arg = (*r).findArg<std::string_view>("length");
 					if (!arg.first) return std::nullopt;	// 指定ナシ
 					if (!arg.second) throw MmlException(ErrorCode::sequenceLengthError, text);	// 型が違う
 					const auto& lengthText = *arg.second;
-					const auto len = parseLength(lengthText, port.defaultStep);
+					const auto len = parseLength(lengthText, track.defaultStep);
 					if ((len.next.data() - lengthText.data()) != lengthText.size()) throw MmlException(ErrorCode::sequenceLengthError, text);	// 余計な文字列がある
 					return len.step;
 				}();
@@ -1536,62 +1597,62 @@ public:
 				auto result = [&]()->MmlToEventsResult {
 					SequenceSet sequenceSet = state.sequenceSet;														// ローカル優先
 					sequenceSet.insert(state.params.sequenceSet.get().begin(), state.params.sequenceSet.get().end());	// 次に親
-					PortInfoSet portInfoSet;
-					for (const auto& i : state.portStateSet) portInfoSet.insert(i);										// ローカル優先
-					portInfoSet.insert(state.params.portInfoSet.get().begin(), state.params.portInfoSet.get().end());	// 次に親
-					const auto it = portInfoSet.find(port.name);
+					TrackInfoSet trackInfoSet;
+					for (const auto& i : state.trackStateSet) trackInfoSet.insert(i);										// ローカル優先
+					trackInfoSet.insert(state.params.trackInfoSet.get().begin(), state.params.trackInfoSet.get().end());	// 次に親
+					const auto it = trackInfoSet.find(track.name);
 					try {
-						return mmlToEvents({ callStack, seq.mml, sequenceSet,portInfoSet,it, state.params.portSerial });	// sequence(mml)をパース
+						return mmlToEvents({ callStack, seq.mml, sequenceSet,trackInfoSet,it, state.params.trackSerial, state.params.warnings });	// sequence(mml)をパース
 					} catch (const MmlException& e) {
 						state.addErrors(e.errors);	// エラーは重複を除いて追記し、処理は継続する
 						return {};
 					}
 				}();
 
-				for (auto& resPort : result.ports) {
-					if (length) resPort.eventList.erase(resPort.eventList.lower_bound(*length), resPort.eventList.end());	// lenth を越えるイベントは破棄
-					if (resPort.eventList.empty()) continue;	// 空なら次へ
+				for (auto& resTrack : result.tracks) {
+					if (length) resTrack.eventList.erase(resTrack.eventList.lower_bound(*length), resTrack.eventList.end());	// lenth を越えるイベントは破棄
+					if (resTrack.eventList.empty()) continue;	// 空なら次へ
 
 					{// 現在位置を加算　(std::multiset の key をconst_castで書き換えるのを避ける)
-						// for (auto& ev : resPort.eventList) const_cast<size_t&>(ev.first) += port.position;
+						// for (auto& ev : resTrack.eventList) const_cast<size_t&>(ev.first) += track.position;
 						EventList shifted;
-						while (!resPort.eventList.empty()) {
-							auto nh = resPort.eventList.extract(resPort.eventList.begin());
-							nh.key() += port.position;
+						while (!resTrack.eventList.empty()) {
+							auto nh = resTrack.eventList.extract(resTrack.eventList.begin());
+							nh.key() += track.position;
 							shifted.insert(shifted.end(), std::move(nh));
 						}
-						resPort.eventList = std::move(shifted);
+						resTrack.eventList = std::move(shifted);
 					}
 
-					if (state.params.depth() < resPort.depth) {	// Seq の中で生成されたPortは resultPorts に
-						// 同name,同instrument,同channel のPortがあれば結合(SMFのTrackを増やさない)。結合先は書き込み順に後ろへ追加される
-						const auto same = [&](const auto& p) { return p.name == resPort.name && p.instrument == resPort.instrument && p.channel == resPort.channel; };
-						if (const auto li = state.portStateSet.find(resPort.name); li != state.portStateSet.end() && same(*li)) {
-							const_cast<EventList&>(li->eventList).merge(resPort.eventList);
-						} else if (const auto ri = std::find_if(state.resultPorts.begin(), state.resultPorts.end(), same); ri != state.resultPorts.end()) {
-							ri->eventList.merge(resPort.eventList);
+					if (state.params.depth() < resTrack.depth) {	// Seq の中で生成されたTrackは resultTracks に
+						// 同name,同instrument,同channel,同port のTrackがあれば結合(SMFのTrackを増やさない)。結合先は書き込み順に後ろへ追加される
+						const auto same = [&](const auto& p) { return p.name == resTrack.name && p.instrument == resTrack.instrument && p.channel == resTrack.channel && p.port == resTrack.port; };
+						if (const auto li = state.trackStateSet.find(resTrack.name); li != state.trackStateSet.end() && same(*li)) {
+							const_cast<EventList&>(li->eventList).merge(resTrack.eventList);
+						} else if (const auto ri = std::find_if(state.resultTracks.begin(), state.resultTracks.end(), same); ri != state.resultTracks.end()) {
+							ri->eventList.merge(resTrack.eventList);
 						} else {
-							state.resultPorts.emplace_back(std::move(resPort));
+							state.resultTracks.emplace_back(std::move(resTrack));
 						}
-					} else {									// portStateSet に合成
-						auto it = state.portStateSet.find(resPort.name);
-						if (it == state.portStateSet.end()) {
-							const auto i = state.params.portInfoSet.get().find(resPort.name);
-							if (i == state.params.portInfoSet.get().end()) throw MmlException(ErrorCode::unknownError, text);	// failsafe
-							it = state.portStateSet.insert(PortState(*i)).first;
+					} else {									// trackStateSet に合成
+						auto it = state.trackStateSet.find(resTrack.name);
+						if (it == state.trackStateSet.end()) {
+							const auto i = state.params.trackInfoSet.get().find(resTrack.name);
+							if (i == state.params.trackInfoSet.get().end()) throw MmlException(ErrorCode::unknownError, text);	// failsafe
+							it = state.trackStateSet.insert(TrackState(*i)).first;
 						}
-						const_cast<EventList&>(it->eventList).merge(resPort.eventList);
+						const_cast<EventList&>(it->eventList).merge(resTrack.eventList);
 					}
 				}
-				port.beforeEvent.reset();		// '^'の対象をクリア
+				track.beforeEvent.reset();		// '^'の対象をクリア
 
-				if (!port.noteUnmove) {
+				if (!track.noteUnmove) {
 					if (length) {
-						port.position += *length;	// length 指定が最優先
+						track.position += *length;	// length 指定が最優先
 					} else if (seq.align) {			// CreateSeq の align 指定があれば、その倍数になるまで切り上げる
-						port.position += (result.endPosition + seq.align - 1) / seq.align * seq.align;
+						track.position += (result.endPosition + seq.align - 1) / seq.align * seq.align;
 					} else {						// 指定ナシはSeq内のPositionそのまま
-						port.position += result.endPosition;
+						track.position += result.endPosition;
 					}
 				}
 
@@ -1605,7 +1666,7 @@ public:
 				const auto next = args->parse([&](const auto& argKey, const std::string_view& argValue) {
 					if (auto argIndex = std::get_if<std::size_t>(&argKey)) {
 						if (*argIndex > 0) throw MmlException(MmlCompiler::ErrorCode::argumentError, argValue);	// 名前ナシ引数は1つまで
-						auto& port = state.getCurrentPort();
+						auto& track = state.getCurrentTrack();
 						const auto r = ParseNum::parse(argValue);
 						if (!r) throw MmlException(MmlCompiler::ErrorCode::fineTuneRangeError, argValue);
 						const double n = r->getValue();
@@ -1616,7 +1677,7 @@ public:
 						}
 						auto e = std::make_shared<InterFineTune>();
 						e->assign = *r;
-						port.eventList.emplace(port.position, e);
+						track.eventList.emplace(track.position, e);
 						return r->next;
 					}
 					assert(false);
@@ -1632,7 +1693,7 @@ public:
 				const auto next = args->parse([&](const auto& argKey, const std::string_view& argValue) {
 					if (auto argIndex = std::get_if<std::size_t>(&argKey)) {
 						if (*argIndex > 0) throw MmlException(MmlCompiler::ErrorCode::argumentError, argValue);	// 名前ナシ引数は1つまで
-						auto& port = state.getCurrentPort();
+						auto& track = state.getCurrentTrack();
 						const auto r = ParseNum::parse(argValue);
 						if (!r) throw MmlException(MmlCompiler::ErrorCode::coarseTuneRangeError, argValue);
 						if (r->ope == ParseNum::Ope::Set) {	// 絶対指定なら
@@ -1642,7 +1703,7 @@ public:
 						if (n < -64 || n > 63) throw MmlException(ErrorCode::coarseTuneRangeError, r->matched);
 						auto e = std::make_shared<InterCoarseTune>();
 						e->assign = *r;
-						port.eventList.emplace(port.position, e);
+						track.eventList.emplace(track.position, e);
 						return r->next;
 					}
 					assert(false);
@@ -1658,7 +1719,7 @@ public:
 				const auto next = args->parse([&](const auto& argKey, const std::string_view& argValue) {
 					if (auto argIndex = std::get_if<std::size_t>(&argKey)) {
 						if (*argIndex > 0) throw MmlException(MmlCompiler::ErrorCode::argumentError, argValue);	// 名前ナシ引数は1つまで
-						auto& port = state.getCurrentPort();
+						auto& track = state.getCurrentTrack();
 						const auto r = ParseNum::parse(argValue, true);
 						if (!r) throw MmlException(MmlCompiler::ErrorCode::masterVolumeRangeError, argValue);
 						if (r->ope == ParseNum::Ope::Set) {	// 絶対指定なら
@@ -1670,7 +1731,7 @@ public:
 						}
 						auto e = std::make_shared<InterMasterVolume>();
 						e->assign = *r;
-						port.eventList.emplace(port.position, e);
+						track.eventList.emplace(track.position, e);
 						return r->next;
 					}
 					assert(false);
@@ -1687,7 +1748,7 @@ public:
 				if (!type || *type < 0 || *type > std::numeric_limits<uint8_t>::max()) {
 					throw MmlException(ErrorCode::metaTypeError, text);
 				}
-				auto& port = state.getCurrentPort();
+				auto& track = state.getCurrentTrack();
 				auto e = std::make_shared<EventMeta>();
 				e->type = static_cast<decltype(e->type)>(*type);
 				for (auto& arg : r->argsList) {
@@ -1706,7 +1767,44 @@ public:
 						}
 					}, arg);
 				}
-				port.eventList.emplace(port.position, e);
+				track.eventList.emplace(track.position, e);
+				return r->next;
+			}},
+
+			// Meter 拍子 Meter(分子,分母,clock:24,n32:8) (MIDI の Time Signature メタイベント FF 58 nn dd cc bb)
+			//   分子 nn    : 1～255 (省略不可)
+			//   分母       : 1,2,4,8,16,32,64,128 のいずれか (省略不可。MIDI では 2 のべき乗の指数 dd で保持)
+			//   clock cc   : メトロノーム1クリックあたりのMIDIクロック数 0～255 (省略時 24 = 4分音符)
+			//   n32  bb    : 4分音符(24クロック)あたりの32分音符数 0～255 (省略時 8)
+			{ErrorCode::meterError,[](State& state,const std::string_view& text)->std::optional<std::string_view> {
+				auto r = parseFunction(text, { "Meter" }, { "clock","n32" }, 2);	// 名前ナシ引数は 分子,分母 の2つまで
+				if (!r) return std::nullopt;
+				// 整数引数の取得(未指定なら nullopt、指定されているのに整数でなければエラー)
+				const auto getInt = [&](const auto& key)->std::optional<std::intmax_t> {
+					if (!r->template findArg<std::intmax_t>(key).first) return std::nullopt;
+					if (const auto n = r->findArgInt(key)) return n;
+					throw MmlException(ErrorCode::meterError, text);
+				};
+				const auto numerator = getInt(size_t{ 0 });
+				const auto denominator = getInt(size_t{ 1 });
+				if (!numerator || !denominator) throw MmlException(ErrorCode::meterError, text);	// 分子・分母は省略不可
+				const auto clock = getInt("clock").value_or(24);
+				const auto n32 = getInt("n32").value_or(8);
+				if (*numerator < 1 || *numerator > 255) throw MmlException(ErrorCode::meterRangeError, text);
+				if (*denominator < 1 || *denominator > 128 || (*denominator & (*denominator - 1)) != 0) throw MmlException(ErrorCode::meterRangeError, text);	// 2のべき乗のみ
+				if (clock < 0 || clock > 255 || n32 < 0 || n32 > 255) throw MmlException(ErrorCode::meterRangeError, text);
+				uint8_t dd = 0;		// 分母の指数 (分母 = 2^dd)
+				while ((std::intmax_t{ 1 } << dd) < *denominator) dd++;
+				auto& track = state.getCurrentTrack();
+				auto e = std::make_shared<EventMeta>();
+				e->type = static_cast<decltype(e->type)>(midi::EventMeta::Type::meter);
+				e->data = {
+					static_cast<uint8_t>(*numerator),
+					dd,
+					static_cast<uint8_t>(clock),
+					static_cast<uint8_t>(n32),
+				};
+				track.eventList.emplace(track.position, e);
 				return r->next;
 			}},
 
@@ -1714,7 +1812,7 @@ public:
 			{ErrorCode::sysExError,[](State& state,const std::string_view& text)->std::optional<std::string_view> {
 				auto r = parseFunction(text, { "SysEx" }, {});
 				if (!r) return std::nullopt;
-				auto& port = state.getCurrentPort();
+				auto& track = state.getCurrentTrack();
 				auto e = std::make_shared<EventSystemExclusive>();
 				for (auto& arg : r->argsList) {
 					std::visit([&](auto&& val) {
@@ -1735,7 +1833,7 @@ public:
 				if (e->data.size() <= 0 || (e->data[0] != 0xf7 && e->data[0] != 0xf0)) {	// 先頭バイトチェック
 					throw MmlException(ErrorCode::sysExArgFirstError, text);
 				}
-				port.eventList.emplace(port.position, e);
+				track.eventList.emplace(track.position, e);
 				return r->next;
 			}},
 
@@ -1773,12 +1871,12 @@ public:
 						}},
 					}},
 				};
-				auto& port = state.getCurrentPort();
+				auto& track = state.getCurrentTrack();
 				auto e = std::make_shared<EventMeta>();
 				e->type = static_cast<decltype(e->type)>(midi::EventMeta::Type::sequencerLocal);
 				auto stringified = j.stringify();
 				e->data = { stringified.begin(), stringified.end() };
-				auto it = port.eventList.emplace(port.position, e);
+				auto it = track.eventList.emplace(track.position, e);
 				return r->next;
 			}},
 
@@ -1831,12 +1929,12 @@ public:
 						}},
 					}},
 				};
-				auto& port = state.getCurrentPort();
+				auto& track = state.getCurrentTrack();
 				auto e = std::make_shared<EventMeta>();
 				e->type = static_cast<decltype(e->type)>(midi::EventMeta::Type::sequencerLocal);
 				auto stringified = j.stringify();
 				e->data = { stringified.begin(), stringified.end() };
-				auto it = port.eventList.emplace(port.position, e);
+				auto it = track.eventList.emplace(track.position, e);
 				return r->next;
 			}},
 
@@ -1883,34 +1981,36 @@ public:
 
 		const bool isRoot = params.depth() == 1;
 		size_t endPosition = state.maxPosition;	// このシーケンスの終了位置
-		for (auto& port : state.portStateSet) {
-			auto& p = const_cast<PortState&>(port);	// const_cast することで std::move 可にする
+		for (auto& track : state.trackStateSet) {
+			auto& p = const_cast<TrackState&>(track);	// const_cast することで std::move 可にする
 			endPosition = std::max(endPosition, p.position);
-			if (p.depth >= params.depth() || isRoot) Convert::portEvents(p.eventList);	// 自分の階層で生成したPort(とルート)は中身が揃ったので中間イベントを処理。親から引き継いだPortは親に任せる。
-			state.resultPorts.emplace_back(MmlToEventsResult::ResPort{ p.name, p.instrument, p.channel, std::move(p.eventList), p.depth, p.serial });
+			if (p.depth >= params.depth() || isRoot) Convert::trackEvents(p.eventList);	// 自分の階層で生成したTrack(とルート)は中身が揃ったので中間イベントを処理。親から引き継いだTrackは親に任せる。
+			state.resultTracks.emplace_back(MmlToEventsResult::ResTrack{ std::string(p.name), std::string(p.instrument), p.channel, p.port, std::move(p.eventList), p.depth, p.serial });
 		}
-		if (isRoot) {		// 全Portが揃ったので、Port生成順に並べて Port を跨ぐ中間イベントを変換する
-			std::stable_sort(state.resultPorts.begin(), state.resultPorts.end(), [](const auto& a, const auto& b) { return a.serial < b.serial; });
-			Convert::globalEvents(state.resultPorts);
+		if (isRoot) {		// 全Trackが揃ったので、Track生成順に並べて Track を跨ぐ中間イベントを変換する
+			std::stable_sort(state.resultTracks.begin(), state.resultTracks.end(), [](const auto& a, const auto& b) { return a.serial < b.serial; });
+			Convert::globalEvents(state.resultTracks);
 		}
-		return MmlToEventsResult{ std::move(state.resultPorts), endPosition };
+		return MmlToEventsResult{ std::move(state.resultTracks), endPosition };
 	}
 
 };
 
 MmlCompiler::Result MmlCompiler::compile(const std::shared_ptr<const std::string>& mml) {
 	Result r{ mml };
+	std::vector<Result::Warning> warnings;
 	try {
-		const Inner::PortInfoSet portInfoSet = { {0,std::string_view(),std::string_view(),0,0} };
+		const Inner::TrackInfoSet trackInfoSet = { {0,std::string_view(),std::string_view(),0,std::nullopt,0} };
 		const Inner::SequenceSet sequenceSet;
 		const std::vector<std::string_view> callStack = { std::string_view() };	// ルート(空名)
-		size_t portSerial = portInfoSet.cbegin()->serial + 1;	// 0 はルートの既定Port(名前なし)。以降 CreatePort された順に採番
-		auto result = Inner::mmlToEvents({ callStack, *mml, sequenceSet, portInfoSet, portInfoSet.cbegin(), portSerial });
-		r.ports.reserve(result.ports.size());
-		for (auto& port : result.ports) r.ports.emplace_back(std::move(port));
+		size_t trackSerial = trackInfoSet.cbegin()->serial + 1;	// 0 はルートの既定Track(名前なし)。以降 CreateTrack された順に採番
+		auto result = Inner::mmlToEvents({ callStack, *mml, sequenceSet, trackInfoSet, trackInfoSet.cbegin(), trackSerial, warnings });
+		r.tracks.reserve(result.tracks.size());
+		for (auto& track : result.tracks) r.tracks.emplace_back(std::move(track));
 	} catch (MmlException& e) {
 		r.errors = e.errors;
 	}
+	r.warnings = std::move(warnings);
 	return r;
 }
 
@@ -1958,6 +2058,86 @@ std::optional<MmlCompiler::Util::ParsedWord> MmlCompiler::Util::parseWord(const 
 
 	return std::nullopt;
 }
+
+
+std::string  MmlCompiler::Util::tracksToJson(const std::vector<Track>& tracks) {
+
+	const auto toArray = [](const std::vector<uint8_t>& data) {
+		Json::Array a;
+		a.reserve(data.size());
+		for (const auto b : data) a.emplace_back(static_cast<int>(b));
+		return Json(std::move(a));
+	};
+
+	size_t endTick = 0;		// 全トラックで最後のイベントの位置(音符は終了位置)
+	Json::Array jsonTracks;
+	for (const auto& track : tracks) {
+		Json::Array jsonEvents;
+		jsonEvents.reserve(track.eventList.size());
+		for (const auto& event : track.eventList) {
+			const EventBase& e = *event.second;
+			Json::Map j;
+			j["tick"] = event.first;
+			size_t end = event.first;
+			if (const auto n = dynamic_cast<const EventNote*>(&e)) {
+				j["type"] = "note";
+				j["note"] = n->note;
+				j["length"] = n->length;
+				j["velocity"] = n->velocity;
+				end += n->length;
+			} else if (const auto pc = dynamic_cast<const EventProgramChange*>(&e)) {
+				j["type"] = "programChange";
+				j["program"] = pc->programNo;
+			} else if (const auto cc = dynamic_cast<const EventControlChange*>(&e)) {
+				j["type"] = "controlChange";
+				j["controller"] = cc->no;
+				j["value"] = cc->value;
+			} else if (const auto pb = dynamic_cast<const EventPitchBend*>(&e)) {
+				j["type"] = "pitchBend";
+				j["value"] = pb->pitchBend;
+			} else if (const auto meta = dynamic_cast<const EventMeta*>(&e)) {
+				if (meta->type == static_cast<uint8_t>(midi::EventMeta::Type::tempo) && meta->data.size() == 3 && (meta->data[0] || meta->data[1] || meta->data[2])) {
+					const midi::EventMeta m(midi::EventMeta::Type::tempo, std::vector<uint8_t>(meta->data));
+					j["type"] = "tempo";
+					j["bpm"] = m.getTempo();
+				} else if (meta->type == static_cast<uint8_t>(midi::EventMeta::Type::meter) && meta->data.size() == 4 && meta->data[1] < 31) {
+					j["type"] = "timeSignature";
+					j["numerator"] = meta->data[0];
+					j["denominator"] = 1u << meta->data[1];
+					j["clock"] = meta->data[2];
+					j["n32"] = meta->data[3];
+				} else {
+					j["type"] = "meta";
+					j["metaType"] = meta->type;
+					j["data"] = toArray(meta->data);
+				}
+			} else if (const auto sx = dynamic_cast<const EventSystemExclusive*>(&e)) {
+				j["type"] = "sysEx";
+				j["data"] = toArray(sx->data);
+			} else {
+				j["type"] = "unknown";
+			}
+			endTick = (std::max)(endTick, end);
+			jsonEvents.emplace_back(std::move(j));
+		}
+
+		Json::Map jt;
+		jt["name"] = track.name;
+		jt["instrument"] = track.instrument;
+		jt["channel"] = track.channel;
+		if (track.port) jt["port"] = *track.port;
+		jt["events"] = Json(std::move(jsonEvents));
+		jsonTracks.emplace_back(std::move(jt));
+	}
+
+	Json::Map root;
+	root["ticksPerQuarter"] = timeBase;
+	root["endTick"] = endTick;
+	root["tracks"] = Json(std::move(jsonTracks));
+	return Json(std::move(root)).stringify();
+}
+
+
 
 
 void MmlCompiler::unitTest() {
@@ -2180,41 +2360,128 @@ void MmlCompiler::unitTest() {
 
 		// オクターブ指定の桁あふれ -> oCommandRangeErrorとして捕捉されること
 		{
-			const auto r = MmlCompiler::compile("CreatePort(name:p,instrument:i,channel:1) o" + huge);
+			const auto r = MmlCompiler::compile("CreateTrack(name:p,instrument:i,channel:1) o" + huge);
 			assert(r.hasError());
 			assert(!r.errors.empty() && r.errors[0].code == MmlCompiler::ErrorCode::oCommandRangeError);
 		}
 		// オクターブ指定の正常系が引き続き動作すること(リグレッション確認)
 		{
-			const auto r = MmlCompiler::compile(std::string("CreatePort(name:p,instrument:i,channel:1) o5"));
+			const auto r = MmlCompiler::compile(std::string("CreateTrack(name:p,instrument:i,channel:1) o5"));
 			assert(!r.hasError());
 		}
 		// プログラムチェンジの桁あふれ -> programchangeCommandErrorとして捕捉されること
 		{
-			const auto r = MmlCompiler::compile("CreatePort(name:p,instrument:i,channel:1) @" + huge);
+			const auto r = MmlCompiler::compile("CreateTrack(name:p,instrument:i,channel:1) @" + huge);
 			assert(r.hasError());
 			assert(!r.errors.empty() && r.errors[0].code == MmlCompiler::ErrorCode::programchangeCommandError);
 		}
 		// プログラムチェンジの正常系が引き続き動作すること(リグレッション確認)
 		{
-			const auto r = MmlCompiler::compile(std::string("CreatePort(name:p,instrument:i,channel:1) @1"));
+			const auto r = MmlCompiler::compile(std::string("CreateTrack(name:p,instrument:i,channel:1) @1"));
 			assert(!r.hasError());
 		}
 	}
 
-	{// compile(): Seq / Port / Sequence 関連
-		std::cout << "compile (Seq/Port)" << std::endl;
+	{// compile(): Seq / Track / Sequence 関連
+		std::cout << "compile (Seq/Track)" << std::endl;
 		using Code = MmlCompiler::ErrorCode;
 		const auto comp = [](const std::string& mml) { return MmlCompiler::compile(mml); };
-		const auto portCount = [](const MmlCompiler::Result& r, std::string_view portName) {
-			return std::count_if(r.ports.begin(), r.ports.end(), [&](const MmlCompiler::Port& p) { return p.name == portName; });
+		const auto trackCount = [](const MmlCompiler::Result& r, std::string_view trackName) {
+			return std::count_if(r.tracks.begin(), r.tracks.end(), [&](const MmlCompiler::Track& p) { return p.name == trackName; });
 		};
 		const auto codes = [](const MmlCompiler::Result& r) {
 			std::vector<Code> v;
 			for (const auto& e : r.errors) v.push_back(e.code);
 			return v;
 		};
-		const std::string head = "CreatePort(name:a,instrument:fm,channel:1)\n";
+		const std::string head = "CreateTrack(name:a,instrument:fm,channel:1)\n";
+		{// 旧コマンド名 Port / CreatePort は非推奨だが、Track / CreateTrack と同じ結果になる(警告が付く)
+			using Warn = MmlCompiler::WarningCode;
+			const auto warnCodes = [](const MmlCompiler::Result& r) {
+				std::vector<Warn> v;
+				for (const auto& w : r.warnings) v.push_back(w.code);
+				return v;
+			};
+			const auto rNew = comp("CreateTrack(name:a,instrument:fm,channel:3) c Track(a) d");
+			const auto rOld = comp("CreatePort(name:a,instrument:fm,channel:3) c Port(a) d");
+			assert(!rNew.hasError() && !rOld.hasError());
+			assert(rNew.warnings.empty());		// 新名称は警告なし
+			assert((warnCodes(rOld) == std::vector<Warn>{ Warn::deprecatedCreatePortCommand, Warn::deprecatedPortCommand }));
+			assert(rNew.tracks.size() == rOld.tracks.size());
+			assert(trackCount(rOld, "a") == 1 && trackCount(rNew, "a") == 1);
+			const auto findTrack = [](const MmlCompiler::Result& r) -> const MmlCompiler::Track& {
+				return *std::find_if(r.tracks.begin(), r.tracks.end(), [](const MmlCompiler::Track& t) { return t.name == "a"; });
+			};
+			assert(findTrack(rOld).instrument == "fm" && findTrack(rOld).channel == 2);
+			assert(findTrack(rOld).eventList.size() == findTrack(rNew).eventList.size() && findTrack(rOld).eventList.size() == 2);
+			{// 新旧の混在も可能
+				const auto r = comp("CreatePort(name:a,instrument:fm,channel:1) c CreateTrack(name:b,instrument:fm,channel:2) Port(a) d Track(b) e");
+				assert(!r.hasError() && trackCount(r, "a") == 1 && trackCount(r, "b") == 1);
+				assert((warnCodes(r) == std::vector<Warn>{ Warn::deprecatedCreatePortCommand, Warn::deprecatedPortCommand }));
+			}
+			{// Seq の再展開で同じ箇所の警告が重複しない
+				const auto r = comp(head + "CreateSeq(name:X,mml:\"Port(a) c\")\nSeq(X) Seq(X)");
+				assert(!r.hasError());
+				assert((warnCodes(r) == std::vector<Warn>{ Warn::deprecatedPortCommand }));
+			}
+			{// エラーで中断しても、それまでの警告は失われない
+				const auto r = comp("CreatePort(name:a,instrument:fm,channel:1) o99");
+				assert(r.hasError());
+				assert((warnCodes(r) == std::vector<Warn>{ Warn::deprecatedCreatePortCommand }));
+			}
+			{// 警告の文字列化
+				const auto r = comp("CreatePort(name:a,instrument:fm,channel:1)");
+				const auto text = r.getText(r.warnings);
+				assert(text.find("warning") != std::string::npos && text.find("CreateTrack") != std::string::npos);
+				assert(r.getJson(r.warnings).find("warnings") != std::string::npos);
+			}
+			(void)warnCodes;
+		}
+		{// CreateTrack の port 引数 (MIDI Port: 0～255。省略と port:0 は別物)
+			const auto portOf = [](const MmlCompiler::Result& r, std::string_view name) -> std::optional<uint8_t> {
+				const auto it = std::find_if(r.tracks.begin(), r.tracks.end(), [&](const MmlCompiler::Track& t) { return t.name == name; });
+				assert(it != r.tracks.end());
+				return it->port;
+			};
+			{// 省略 → 指定なし / 0 → 0 / 255 → 255
+				const auto rNone = comp("CreateTrack(name:n,channel:1) c");
+				const auto rZero = comp("CreateTrack(name:n,channel:1,port:0) c");
+				const auto rMax = comp("CreateTrack(name:n,channel:1,port:255) c");
+				const auto rOld = comp("CreatePort(name:n,channel:1,port:7) c");		// 旧名(非推奨)でも port は指定できる
+				assert(!rNone.hasError() && !rZero.hasError() && !rMax.hasError() && !rOld.hasError());
+				assert(!portOf(rNone, "n").has_value());
+				assert(portOf(rZero, "n").has_value() && *portOf(rZero, "n") == 0);
+				assert(portOf(rMax, "n").has_value() && *portOf(rMax, "n") == 255);
+				assert(portOf(rOld, "n").has_value() && *portOf(rOld, "n") == 7);
+				assert(!portOf(comp("c"), "").has_value());		// ルートの既定Trackも指定なし
+			}
+			{// 範囲外・不正はエラー
+				for (const char* arg : { "port:256", "port:-1", "port:1.5", "port:x", "port:1000000000000" }) {
+					const auto r = comp(std::string("CreateTrack(name:n,channel:1,") + arg + ") c");
+					assert((codes(r) == std::vector<Code>{ Code::createTrackPortError }));
+				}
+			}
+			{// 結合条件に port を含む: 同name,同instrument,同channel でも port が違えば結合しない
+				const auto mk = [&](const std::string& px, const std::string& py) {
+					return comp(head + "CreateSeq(name:X,mml:\"CreateTrack(name:n,instrument:fm,channel:5" + px + ") c\")\n"
+						"CreateSeq(name:Y,mml:\"CreateTrack(name:n,instrument:fm,channel:5" + py + ") d\")\nSeq(X) Seq(Y)");
+				};
+				const auto same = mk(",port:2", ",port:2");
+				assert(!same.hasError()); assert(trackCount(same, "n") == 1);
+				const auto diff = mk(",port:2", ",port:3");
+				assert(!diff.hasError()); assert(trackCount(diff, "n") == 2);
+				const auto noneVsZero = mk("", ",port:0");		// 省略と port:0 は別
+				assert(!noneVsZero.hasError()); assert(trackCount(noneVsZero, "n") == 2);
+				const auto noneBoth = mk("", "");
+				assert(!noneBoth.hasError()); assert(trackCount(noneBoth, "n") == 1);
+			}
+			{// Seq 内の CreateTrack は port を呼び出し側から引き継がない(instrument とは違う)
+				const auto r = comp("CreateTrack(name:a,instrument:fm,channel:1,port:4) CreateSeq(name:X,mml:\"CreateTrack(name:n,channel:5) c\")\nSeq(X)");
+				assert(!r.hasError());
+				assert(!portOf(r, "n").has_value());
+				assert(*portOf(r, "a") == 4);
+			}
+		}
 		// イベントを文字列にする(テストの期待値を読みやすくするため)
 		//   音符                : "o4c@0:480v100" = オクターブ4の c / 位置0 / 音長480 / ベロシティ100 (MMLの音名。#は + )
 		//   プログラムチェンジ  : "P33@0"         = 音色33 / 位置0
@@ -2231,20 +2498,20 @@ void MmlCompiler::unitTest() {
 			}
 			return "?" + at;
 		};
-		// 指定名のPort(同名が複数あれば順に連結)の全イベントを文字列列にする
-		const auto evs = [&](const MmlCompiler::Result& r, std::string_view portName) {
+		// 指定名のTrack(同名が複数あれば順に連結)の全イベントを文字列列にする
+		const auto evs = [&](const MmlCompiler::Result& r, std::string_view trackName) {
 			std::vector<std::string> v;
-			for (const auto& p : r.ports) {
-				if (p.name != portName) continue;
+			for (const auto& p : r.tracks) {
+				if (p.name != trackName) continue;
 				for (const auto& ev : p.eventList) v.push_back(eventText(ev.first, *ev.second));
 			}
 			return v;
 		};
-		// 指定名のPort(同名が複数あれば全て)の音符だけを、位置順(同位置は出力順)の文字列列にする
-		const auto notes = [&](const MmlCompiler::Result& r, std::string_view portName) {
+		// 指定名のTrack(同名が複数あれば全て)の音符だけを、位置順(同位置は出力順)の文字列列にする
+		const auto notes = [&](const MmlCompiler::Result& r, std::string_view trackName) {
 			std::vector<std::pair<size_t, std::string>> v;
-			for (const auto& p : r.ports) {
-				if (p.name != portName) continue;
+			for (const auto& p : r.tracks) {
+				if (p.name != trackName) continue;
 				for (const auto& ev : p.eventList) if (dynamic_cast<const MmlCompiler::EventNote*>(ev.second.get())) v.emplace_back(ev.first, eventText(ev.first, *ev.second));
 			}
 			std::stable_sort(v.begin(), v.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
@@ -2253,10 +2520,10 @@ void MmlCompiler::unitTest() {
 			return r2;
 		};
 		using Strs = std::vector<std::string>;
-	// 名前のあるPortの名前を出力順に返す
+	// 名前のあるTrackの名前を出力順に返す
 		const auto names = [](const MmlCompiler::Result& r) {
 			std::vector<std::string> v;
-			for (const auto& p : r.ports) if (!p.name.empty()) v.emplace_back(p.name);
+			for (const auto& p : r.tracks) if (!p.name.empty()) v.emplace_back(p.name);
 			return v;
 		};
 		using Names = std::vector<std::string>;
@@ -2276,15 +2543,15 @@ void MmlCompiler::unitTest() {
 			assert(!r.hasError());
 			assert((notes(r, "a") == Strs{ "o6c@0:240v33", "o6c@240:240v33", "o4c@480:480v100" }));
 		}
-		{// ネストした Seq の中で祖先の Port を使う(親は一度も触れていないPort)。Seq内で触れたPort(a)の位置も終了位置に含まれるので、b の d は In の終了位置(480)から
-			const auto r = comp(head + "CreatePort(name:b,instrument:fm,channel:2)\n"
-				"CreateSeq(name:In,mml:\"Port(a) o6 c\")\nCreateSeq(name:Out,mml:\"Seq(In) d\")\nPort(b) Seq(Out)");
+		{// ネストした Seq の中で祖先の Track を使う(親は一度も触れていないTrack)。Seq内で触れたTrack(a)の位置も終了位置に含まれるので、b の d は In の終了位置(480)から
+			const auto r = comp(head + "CreateTrack(name:b,instrument:fm,channel:2)\n"
+				"CreateSeq(name:In,mml:\"Track(a) o6 c\")\nCreateSeq(name:Out,mml:\"Seq(In) d\")\nTrack(b) Seq(Out)");
 			assert(!r.hasError());
 			assert((notes(r, "a") == Strs{ "o6c@0:480v100" }));
 			assert((notes(r, "b") == Strs{ "o4d@480:480v100" }));
 		}
-		{// 親で状態(o6)を変更した別Portは、Seq の中の Port() で状態ごと引き継がれる
-			const auto r = comp(head + "CreatePort(name:b,instrument:psg,channel:2)\nCreateSeq(name:X,mml:\"Port(b) c\")\nPort(b) o6 Port(a) Seq(X)");
+		{// 親で状態(o6)を変更した別Trackは、Seq の中の Track() で状態ごと引き継がれる
+			const auto r = comp(head + "CreateTrack(name:b,instrument:psg,channel:2)\nCreateSeq(name:X,mml:\"Track(b) c\")\nTrack(b) o6 Track(a) Seq(X)");
 			assert(!r.hasError());
 			assert((notes(r, "b") == Strs{ "o6c@0:480v100" }));
 			assert(notes(r, "a").empty());
@@ -2351,34 +2618,34 @@ void MmlCompiler::unitTest() {
 			assert(!r.hasError());
 			assert((notes(r, "a") == Strs{ "o4c@0:480v100", "o4c@480:480v100", "o4d@1440:480v100" }));	// Seq(X) は 480 進み、^ で更に 480
 		}
-		{// Seq の中で作った Port は同name,同instrument,同channel なら1つに結合され、instrument 省略時は呼び出し側のPortのものを引き継ぐ
-			const auto r = comp(head + "CreateSeq(name:X,mml:\"CreatePort(name:n,channel:5) c\")\nSeq(X) Seq(X)");
+		{// Seq の中で作った Track は同name,同instrument,同channel なら1つに結合され、instrument 省略時は呼び出し側のTrackのものを引き継ぐ
+			const auto r = comp(head + "CreateSeq(name:X,mml:\"CreateTrack(name:n,channel:5) c\")\nSeq(X) Seq(X)");
 			assert(!r.hasError());
-			assert(portCount(r, "n") == 1);
-			for (const auto& p : r.ports) if (p.name == "n") { assert(p.instrument == "fm"); assert(p.channel == 4); }
+			assert(trackCount(r, "n") == 1);
+			for (const auto& p : r.tracks) if (p.name == "n") { assert(p.instrument == "fm"); assert(p.channel == 4); }
 			assert((notes(r, "n") == Strs{ "o4c@0:480v100", "o4c@480:480v100" }));
 		}
-		{// 同名Portの重複 CreatePort はエラー。Seq の中で親と同名のPortを作り直す(隠蔽する)のは可能で、元Portの内容は親へ戻る
-			const auto r1 = comp(head + "CreatePort(name:a,instrument:fm,channel:2)");
-			assert((codes(r1) == std::vector<Code>{ Code::createPortDuplicateError }));
+		{// 同名Trackの重複 CreateTrack はエラー。Seq の中で親と同名のTrackを作り直す(隠蔽する)のは可能で、元Trackの内容は親へ戻る
+			const auto r1 = comp(head + "CreateTrack(name:a,instrument:fm,channel:2)");
+			assert((codes(r1) == std::vector<Code>{ Code::createTrackDuplicateError }));
 
-			const auto r2 = comp(head + "CreateSeq(name:X,mml:\"CreatePort(name:a,instrument:psg,channel:3) c\")\nc Seq(X) d");
+			const auto r2 = comp(head + "CreateSeq(name:X,mml:\"CreateTrack(name:a,instrument:psg,channel:3) c\")\nc Seq(X) d");
 			assert(!r2.hasError());
-			assert(portCount(r2, "a") == 2);
+			assert(trackCount(r2, "a") == 2);
 			assert((notes(r2, "a") == Strs{ "o4c@0:480v100", "o4c@480:480v100", "o4d@960:480v100" }));
 		}
-		{// 隠蔽が孫の階層で起きても、元Portの内容は途中の階層を経由して祖先へ戻る
-			const auto r = comp(head + "CreateSeq(name:X,mml:\"CreatePort(name:a,instrument:psg,channel:3) c\")\n"
+		{// 隠蔽が孫の階層で起きても、元Trackの内容は途中の階層を経由して祖先へ戻る
+			const auto r = comp(head + "CreateSeq(name:X,mml:\"CreateTrack(name:a,instrument:psg,channel:3) c\")\n"
 				"CreateSeq(name:Y,mml:\"c Seq(X) d\")\nSeq(Y)");
 			assert(!r.hasError());
-			assert(portCount(r, "a") == 2);
+			assert(trackCount(r, "a") == 2);
 			assert((notes(r, "a") == Strs{ "o4c@0:480v100", "o4c@480:480v100", "o4d@960:480v100" }));
 		}
 		{// Seq の中の中間イベント(V)は位置がずらされ、最終イベント(ControlChange)へ変換される
 			const auto r = comp(head + "CreateSeq(name:X,mml:\"V(50) c\")\nr4 Seq(X)");
 			assert(!r.hasError());
 			bool found = false;
-			for (const auto& p : r.ports) {
+			for (const auto& p : r.tracks) {
 				for (const auto& ev : p.eventList) {
 					const auto cc = dynamic_cast<const MmlCompiler::EventControlChange*>(ev.second.get());
 					if (cc && ev.first == 480 && cc->no == static_cast<uint8_t>(midi::EventControlChange::Type::volume)) {
@@ -2389,9 +2656,9 @@ void MmlCompiler::unitTest() {
 			}
 			assert(found);
 		}
-		{// 未定義Port: エラーは1件だけで、続く行は(クラッシュせず)現在のPortで処理される
-			const auto r = comp(head + "Port(zzz)\nc d e\nPort(a) f\n");
-			assert((codes(r) == std::vector<Code>{ Code::portNameError }));
+		{// 未定義Track: エラーは1件だけで、続く行は(クラッシュせず)現在のTrackで処理される
+			const auto r = comp(head + "Track(zzz)\nc d e\nTrack(a) f\n");
+			assert((codes(r) == std::vector<Code>{ Code::trackNameError }));
 		}
 		{// Seq の呼び出しエラー: 未定義Sequence / 名前なし / length 指定誤り
 			assert((codes(comp(head + "Seq(Q)")) == std::vector<Code>{ Code::sequenceNameError }));
@@ -2410,28 +2677,28 @@ void MmlCompiler::unitTest() {
 			const auto r = comp(head + "CreateSeq(name:X,mml:\"c zzz\")\nSeq(X) Seq(X) c");
 			assert((codes(r) == std::vector<Code>{ Code::unknownError }));
 		}
-		{// 出力される Port の順序は生成された順(Seq の中で生成された Port も、その生成時点の位置)
+		{// 出力される Track の順序は生成された順(Seq の中で生成された Track も、その生成時点の位置)
 			// 子(main)で bass を生成した後、孫(baseE)で bassE を生成する -> bass, bassE の順
-			const auto r1 = comp("CreateSeq(name:baseE, mml:\"\n CreatePort(name:bassE, channel:1) l8 v127 o1 e^<e>e^e<e^\n\")\n"
-				"CreateSeq(name:main,mml:R\"main(\n CreatePort(name:bass, channel:1) l8 V(120) @33 o1 v127\n Seq(baseE)\n )main\")\n"
+			const auto r1 = comp("CreateSeq(name:baseE, mml:\"\n CreateTrack(name:bassE, channel:1) l8 v127 o1 e^<e>e^e<e^\n\")\n"
+				"CreateSeq(name:main,mml:R\"main(\n CreateTrack(name:bass, channel:1) l8 V(120) @33 o1 v127\n Seq(baseE)\n )main\")\n"
 				"Seq(main)");
 			assert(!r1.hasError());
 			assert((names(r1) == Names{ "bass", "bassE" }));
 			// ルートの a -> Seq 内の n -> ルートの b -> Seq 内の n(2回目は結合) の順
-			const auto r2 = comp(head + "CreateSeq(name:X,mml:\"CreatePort(name:n,channel:5) c\")\nSeq(X) CreatePort(name:b,channel:2) Seq(X)");
+			const auto r2 = comp(head + "CreateSeq(name:X,mml:\"CreateTrack(name:n,channel:5) c\")\nSeq(X) CreateTrack(name:b,channel:2) Seq(X)");
 			assert(!r2.hasError());
 			assert((names(r2) == Names{ "a", "n", "b" }));
 		}
-		{// 同name,同instrument,同channel のPortの結合(SMFのTrackを増やさない)。イベントの処理順は書いた順を保つ
+		{// 同name,同instrument,同channel のTrackの結合(SMFのTrackを増やさない)。イベントの処理順は書いた順を保つ
 			// 例: main / baseE / baseA が全て bass を作る -> bass は1つ。@33 の後に e が並び、その後ろの小節に a が並ぶ
 			{
 				const auto r = comp(
-					"CreateSeq(name:baseE, mml:\"\n CreatePort(name:bass, channel:1) l8 v127 o1 e^<e>e^e<e^\n\")\n"
-					"CreateSeq(name:baseA, mml:\"\n CreatePort(name:bass, channel:1) l8 v127 o1 a^<a>a^a<a^\n\")\n"
-					"CreateSeq(name:main,mml:R\"main(\n CreatePort(name:bass, channel:1) l8 V(120) @33 o1 v127\n Seq(baseE)\n Seq(baseA)\n )main\")\n"
-					"CreatePort(name:root, instrument:fm, channel:2)\nSeq(main)");
+					"CreateSeq(name:baseE, mml:\"\n CreateTrack(name:bass, channel:1) l8 v127 o1 e^<e>e^e<e^\n\")\n"
+					"CreateSeq(name:baseA, mml:\"\n CreateTrack(name:bass, channel:1) l8 v127 o1 a^<a>a^a<a^\n\")\n"
+					"CreateSeq(name:main,mml:R\"main(\n CreateTrack(name:bass, channel:1) l8 V(120) @33 o1 v127\n Seq(baseE)\n Seq(baseA)\n )main\")\n"
+					"CreateTrack(name:root, instrument:fm, channel:2)\nSeq(main)");
 				assert(!r.hasError());
-				assert(portCount(r, "bass") == 1);
+				assert(trackCount(r, "bass") == 1);
 				assert((names(r) == Names{ "root", "bass" }));
 				const auto e = evs(r, "bass");
 				assert((Strs(e.begin(), e.begin() + 2) == Strs{ "C7=120@0", "P33@0" }));	// 先頭は V(120) と @33 の設定(書いた順)
@@ -2441,22 +2708,22 @@ void MmlCompiler::unitTest() {
 			}
 			// 異なる instrument / channel / name は結合しない
 			{
-				const std::string def = "CreateSeq(name:X,mml:\"CreatePort(name:n,instrument:INS,channel:CH) c\")\n";
+				const std::string def = "CreateSeq(name:X,mml:\"CreateTrack(name:n,instrument:INS,channel:CH) c\")\n";
 				auto mk = [&](const std::string& ins, const std::string& ch) {
 					std::string d = def;
 					d.replace(d.find("INS"), 3, ins); d.replace(d.find("CH"), 2, ch);
 					return d;
 				};
-				assert(portCount(comp(head + mk("fm", "5") + "Seq(X) Seq(X)"), "n") == 1);
-				const auto rI = comp(head + "CreateSeq(name:X,mml:\"CreatePort(name:n,instrument:fm,channel:5) c\")\n"
-					"CreateSeq(name:Y,mml:\"CreatePort(name:n,instrument:psg,channel:5) c\")\nSeq(X) Seq(Y)");
-				assert(!rI.hasError()); assert(portCount(rI, "n") == 2);
-				const auto rC = comp(head + "CreateSeq(name:X,mml:\"CreatePort(name:n,instrument:fm,channel:5) c\")\n"
-					"CreateSeq(name:Y,mml:\"CreatePort(name:n,instrument:fm,channel:6) c\")\nSeq(X) Seq(Y)");
-				assert(!rC.hasError()); assert(portCount(rC, "n") == 2);
-				const auto rN = comp(head + "CreateSeq(name:X,mml:\"CreatePort(name:n,instrument:fm,channel:5) c\")\n"
-					"CreateSeq(name:Y,mml:\"CreatePort(name:m,instrument:fm,channel:5) c\")\nSeq(X) Seq(Y)");
-				assert(!rN.hasError()); assert(portCount(rN, "n") == 1); assert(portCount(rN, "m") == 1);
+				assert(trackCount(comp(head + mk("fm", "5") + "Seq(X) Seq(X)"), "n") == 1);
+				const auto rI = comp(head + "CreateSeq(name:X,mml:\"CreateTrack(name:n,instrument:fm,channel:5) c\")\n"
+					"CreateSeq(name:Y,mml:\"CreateTrack(name:n,instrument:psg,channel:5) c\")\nSeq(X) Seq(Y)");
+				assert(!rI.hasError()); assert(trackCount(rI, "n") == 2);
+				const auto rC = comp(head + "CreateSeq(name:X,mml:\"CreateTrack(name:n,instrument:fm,channel:5) c\")\n"
+					"CreateSeq(name:Y,mml:\"CreateTrack(name:n,instrument:fm,channel:6) c\")\nSeq(X) Seq(Y)");
+				assert(!rC.hasError()); assert(trackCount(rC, "n") == 2);
+				const auto rN = comp(head + "CreateSeq(name:X,mml:\"CreateTrack(name:n,instrument:fm,channel:5) c\")\n"
+					"CreateSeq(name:Y,mml:\"CreateTrack(name:m,instrument:fm,channel:5) c\")\nSeq(X) Seq(Y)");
+				assert(!rN.hasError()); assert(trackCount(rN, "n") == 1); assert(trackCount(rN, "m") == 1);
 				assert((names(rN) == Names{ "a", "n", "m" }));
 			}
 			// 同じ時刻の順序は書き込み順: ' (位置を進めない)での Seq(X) と @5
@@ -2470,75 +2737,75 @@ void MmlCompiler::unitTest() {
 				assert(!r2.hasError());
 				assert((evs(r2, "a") == Strs{ "P5@0", "o4c@0:480v100" }));
 			}
-			// 同名Portを作る Seq 同士の順序は呼んだ順
+			// 同名Trackを作る Seq 同士の順序は呼んだ順
 			{
-				const std::string def = head + "CreateSeq(name:X,mml:\"CreatePort(name:n,channel:5) c\")\n"
-					"CreateSeq(name:Y,mml:\"CreatePort(name:n,channel:5) d\")\n";
+				const std::string def = head + "CreateSeq(name:X,mml:\"CreateTrack(name:n,channel:5) c\")\n"
+					"CreateSeq(name:Y,mml:\"CreateTrack(name:n,channel:5) d\")\n";
 				const auto r1 = comp(def + "' Seq(X) Seq(Y)");
-				assert(!r1.hasError()); assert(portCount(r1, "n") == 1);
+				assert(!r1.hasError()); assert(trackCount(r1, "n") == 1);
 				assert((evs(r1, "n") == Strs{ "o4c@0:480v100", "o4d@0:480v100" }));
 				const auto r2 = comp(def + "' Seq(Y) Seq(X)");
 				assert((evs(r2, "n") == Strs{ "o4d@0:480v100", "o4c@0:480v100" }));
 			}
-			// Seq の後に同名を CreatePort した場合は、その Port が Seq の内容を引き継ぐ(生成順は最初のまま)
+			// Seq の後に同名を CreateTrack した場合は、その Track が Seq の内容を引き継ぐ(生成順は最初のまま)
 			{
-				const auto r = comp(head + "CreateSeq(name:X,mml:\"CreatePort(name:n,channel:5) c\")\n"
-					"Seq(X) CreatePort(name:n,channel:5) d CreatePort(name:z,channel:7) Seq(X)");
+				const auto r = comp(head + "CreateSeq(name:X,mml:\"CreateTrack(name:n,channel:5) c\")\n"
+					"Seq(X) CreateTrack(name:n,channel:5) d CreateTrack(name:z,channel:7) Seq(X)");
 				assert(!r.hasError());
-				assert(portCount(r, "n") == 1);
+				assert(trackCount(r, "n") == 1);
 				assert((names(r) == Names{ "a", "n", "z" }));
 				const auto n = notes(r, "n");
 				assert((n == Strs{ "o4c@0:480v100", "o4d@0:480v100", "o4c@0:480v100" }));	// 書いた順(c の後に d、その後に2回目の c)
 			}
 			// 孫まで同名を作っても1つになる(ルートが先に bass を作っていても)
 			{
-				const auto r = comp("CreatePort(name:bass,instrument:fm,channel:1)\n"
-					"CreateSeq(name:baseE,mml:\"CreatePort(name:bass,instrument:fm,channel:1) e\")\n"
-					"CreateSeq(name:main,mml:\"CreatePort(name:bass,instrument:fm,channel:1) c Seq(baseE)\")\nSeq(main)");
+				const auto r = comp("CreateTrack(name:bass,instrument:fm,channel:1)\n"
+					"CreateSeq(name:baseE,mml:\"CreateTrack(name:bass,instrument:fm,channel:1) e\")\n"
+					"CreateSeq(name:main,mml:\"CreateTrack(name:bass,instrument:fm,channel:1) c Seq(baseE)\")\nSeq(main)");
 				assert(!r.hasError());
-				assert(portCount(r, "bass") == 1);
+				assert(trackCount(r, "bass") == 1);
 			}
 			// 中間イベント(V)も書き込み順に変換される: ' Seq(X) V(100) は X の中の V(50) の後に 100
 			{
-				const auto r = comp(head + "CreateSeq(name:X,mml:\"CreatePort(name:a,instrument:fm,channel:1) V(50)\")\n' Seq(X) V(100)");
+				const auto r = comp(head + "CreateSeq(name:X,mml:\"CreateTrack(name:a,instrument:fm,channel:1) V(50)\")\n' Seq(X) V(100)");
 				assert(!r.hasError());
-				assert(portCount(r, "a") == 1);
+				assert(trackCount(r, "a") == 1);
 				const auto e = evs(r, "a");
 				assert((e == Strs{ "C7=50@0", "C7=100@0" }));
 			}
 		}
-		{// 中間イベントの変換は Port ごとに独立して行われ(各Portは既定値から開始)、その後に同じPortが結合される
+		{// 中間イベントの変換は Track ごとに独立して行われ(各Trackは既定値から開始)、その後に同じTrackが結合される
 			{// 同じ bass を作る Seq を結合しても、V(+=40) / V(-=40) は各Seq内の V(80) が基準になる
 				const auto r = comp(
-					"CreateSeq(name:baseE, mml:\"\n CreatePort(name:bass, channel:1) l8 o3 V(80) e V(+=40) e\n\")\n"
-					"CreateSeq(name:baseA, mml:\"\n CreatePort(name:bass, channel:1) l8 o3 V(80) r r a V(-=40) a\n\")\n"
-					"CreateSeq(name:main,mml:R\"main(\n CreatePort(name:bass, channel:1) l8 @1 'Seq(baseE) Seq(baseA)'\n)main\")\n"
+					"CreateSeq(name:baseE, mml:\"\n CreateTrack(name:bass, channel:1) l8 o3 V(80) e V(+=40) e\n\")\n"
+					"CreateSeq(name:baseA, mml:\"\n CreateTrack(name:bass, channel:1) l8 o3 V(80) r r a V(-=40) a\n\")\n"
+					"CreateSeq(name:main,mml:R\"main(\n CreateTrack(name:bass, channel:1) l8 @1 'Seq(baseE) Seq(baseA)'\n)main\")\n"
 					"Seq(main)");
 				assert(!r.hasError());
-				assert(portCount(r, "bass") == 1);
+				assert(trackCount(r, "bass") == 1);
 				assert((evs(r, "bass") == Strs{ "P1@0", "C7=80@0", "o3e@0:240v100", "C7=80@0", "C7=120@240", "o3e@240:240v100", "o3a@480:240v100", "C7=40@720", "o3a@720:240v100" }));
 			}
 			{// 変換を行わないまま結合しても、最終イベントに無い中間イベントは残らない(全イベントが最終イベントになっている)
-				const auto r = comp(head + "CreateSeq(name:X,mml:\"CreatePort(name:n,channel:5) V(70) Pan(10) c\")\nSeq(X) Seq(X)");
+				const auto r = comp(head + "CreateSeq(name:X,mml:\"CreateTrack(name:n,channel:5) V(70) Pan(10) c\")\nSeq(X) Seq(X)");
 				assert(!r.hasError());
-				assert(portCount(r, "n") == 1);
-				for (const auto& p : r.ports) for (const auto& ev : p.eventList) assert(!dynamic_cast<const MmlCompiler::Inner::InterEvent*>(ev.second.get()));
+				assert(trackCount(r, "n") == 1);
+				for (const auto& p : r.tracks) for (const auto& ev : p.eventList) assert(!dynamic_cast<const MmlCompiler::Inner::InterEvent*>(ev.second.get()));
 			}
-			{// 親から引き継いだPortの中間イベントは親の状態の続きとして変換される(V(80) → +=10 → 90)
+			{// 親から引き継いだTrackの中間イベントは親の状態の続きとして変換される(V(80) → +=10 → 90)
 				const auto r = comp(head + "CreateSeq(name:X,mml:\"V(+=10)\")\nV(80) ' Seq(X) V(+=5)");
 				assert(!r.hasError());
 				assert((evs(r, "a") == Strs{ "C7=80@0", "C7=90@0", "C7=95@0" }));
 			}
-			{// ネストしても同様(孫の V(+=10) は祖先Portの状態に続く)
+			{// ネストしても同様(孫の V(+=10) は祖先Trackの状態に続く)
 				const auto r = comp(head + "CreateSeq(name:Z,mml:\"V(+=10)\")\nCreateSeq(name:Y,mml:\"' Seq(Z) V(+=1)\")\nV(80) ' Seq(Y) V(+=5)");
 				assert(!r.hasError());
 				assert((evs(r, "a") == Strs{ "C7=80@0", "C7=90@0", "C7=91@0", "C7=96@0" }));
 			}
-			{// Seq の中で親と同名のPortを作り直して(隠蔽)も、元Portの中間イベントは親の状態に続く。新しいPortは既定値から
-				const auto r = comp(head + "CreateSeq(name:X,mml:\"CreatePort(name:a,instrument:psg,channel:3) V(+=10)\")\nV(80) ' Seq(X) V(+=5)");
+			{// Seq の中で親と同名のTrackを作り直して(隠蔽)も、元Trackの中間イベントは親の状態に続く。新しいTrackは既定値から
+				const auto r = comp(head + "CreateSeq(name:X,mml:\"CreateTrack(name:a,instrument:psg,channel:3) V(+=10)\")\nV(80) ' Seq(X) V(+=5)");
 				assert(!r.hasError());
-				assert(portCount(r, "a") == 2);
-				for (const auto& p : r.ports) {
+				assert(trackCount(r, "a") == 2);
+				for (const auto& p : r.tracks) {
 					if (p.name != "a") continue;
 					std::vector<int> v;
 					for (const auto& ev : p.eventList) if (const auto cc = dynamic_cast<const MmlCompiler::EventControlChange*>(ev.second.get())) v.push_back(cc->value);
@@ -2547,13 +2814,13 @@ void MmlCompiler::unitTest() {
 				}
 			}
 			{// 同じSequenceを2回呼んで結合されても、各呼び出しは独立(既定値100 から +=10 で、どちらも110)
-				const auto r = comp(head + "CreateSeq(name:X,mml:\"CreatePort(name:n,channel:5) V(+=10) c\")\nSeq(X) Seq(X)");
+				const auto r = comp(head + "CreateSeq(name:X,mml:\"CreateTrack(name:n,channel:5) V(+=10) c\")\nSeq(X) Seq(X)");
 				assert(!r.hasError());
-				assert(portCount(r, "n") == 1);
+				assert(trackCount(r, "n") == 1);
 				assert((evs(r, "n") == Strs{ "C7=110@0", "o4c@0:480v100", "C7=110@480", "o4c@480:480v100" }));
 			}
-			{// 名前が違うPortは同じinstrument/channelでも独立(Port a の V(80) を b は引き継がない)
-				const auto r = comp(head + "V(80)\nCreatePort(name:b,instrument:fm,channel:1) V(+=10)");
+			{// 名前が違うTrackは同じinstrument/channelでも独立(Track a の V(80) を b は引き継がない)
+				const auto r = comp(head + "V(80)\nCreateTrack(name:b,instrument:fm,channel:1) V(+=10)");
 				assert(!r.hasError());
 				assert((evs(r, "a") == Strs{ "C7=80@0" }));
 				assert((evs(r, "b") == Strs{ "C7=110@0" }));
@@ -2563,41 +2830,41 @@ void MmlCompiler::unitTest() {
 				assert((codes(r) == std::vector<Code>{ Code::unknownError }));
 			}
 		}
-		{// 親のPortを Port(名前) で参照した後の、同名の CreatePort は createPortShadowError
-			const auto r = comp("CreatePort(name:bass,channel:1) aaa\nCreateSeq(name:seqA,mml:\"Port(bass) aaa\nCreatePort(name:bass,channel:1) bbb\")\nSeq(seqA)");
-			assert((codes(r) == std::vector<Code>{ Code::createPortShadowError }));
+		{// 親のTrackを Track(名前) で参照した後の、同名の CreateTrack は createTrackShadowError
+			const auto r = comp("CreateTrack(name:bass,channel:1) aaa\nCreateSeq(name:seqA,mml:\"Track(bass) aaa\nCreateTrack(name:bass,channel:1) bbb\")\nSeq(seqA)");
+			assert((codes(r) == std::vector<Code>{ Code::createTrackShadowError }));
 		}
-		{// 参照した Port と別名の CreatePort は問題ない
-			const auto r = comp("CreatePort(name:bass,channel:1) aaa\nCreateSeq(name:seqA,mml:\"Port(bass) aaa\nCreatePort(name:other,channel:2) bbb\")\nSeq(seqA)");
+		{// 参照した Track と別名の CreateTrack は問題ない
+			const auto r = comp("CreateTrack(name:bass,channel:1) aaa\nCreateSeq(name:seqA,mml:\"Track(bass) aaa\nCreateTrack(name:other,channel:2) bbb\")\nSeq(seqA)");
 			assert(!r.hasError());
-			assert(portCount(r, "bass") == 1 && portCount(r, "other") == 1);
+			assert(trackCount(r, "bass") == 1 && trackCount(r, "other") == 1);
 		}
-		{// 参照する前なら同名の CreatePort は可能(従来どおり。同name,同instrument,同channel は結合される)
-			const auto r = comp("CreatePort(name:bass,channel:1) aaa\nCreateSeq(name:seqA,mml:\"CreatePort(name:bass,channel:1) bbb\nPort(bass) ccc\")\nSeq(seqA)");
+		{// 参照する前なら同名の CreateTrack は可能(従来どおり。同name,同instrument,同channel は結合される)
+			const auto r = comp("CreateTrack(name:bass,channel:1) aaa\nCreateSeq(name:seqA,mml:\"CreateTrack(name:bass,channel:1) bbb\nTrack(bass) ccc\")\nSeq(seqA)");
 			assert(!r.hasError());
-			assert(portCount(r, "bass") == 1);
+			assert(trackCount(r, "bass") == 1);
 		}
-		{// 参照したのが別のPortなら、その名前を CreatePort してもよい / 自分の階層で作ったPortの参照後の CreatePort は従来どおり重複エラー
-			const auto r1 = comp("CreatePort(name:p,channel:1)\nCreatePort(name:q,channel:2)\nCreateSeq(name:S,mml:\"Port(p) a\nCreatePort(name:q,channel:3) b\")\nSeq(S)");
+		{// 参照したのが別のTrackなら、その名前を CreateTrack してもよい / 自分の階層で作ったTrackの参照後の CreateTrack は従来どおり重複エラー
+			const auto r1 = comp("CreateTrack(name:p,channel:1)\nCreateTrack(name:q,channel:2)\nCreateSeq(name:S,mml:\"Track(p) a\nCreateTrack(name:q,channel:3) b\")\nSeq(S)");
 			assert(!r1.hasError());
-			const auto r2 = comp("CreatePort(name:p,channel:1)\nCreatePort(name:x,channel:2)\nPort(p)\nCreatePort(name:p,channel:3)");
-			assert((codes(r2) == std::vector<Code>{ Code::createPortDuplicateError }));
+			const auto r2 = comp("CreateTrack(name:p,channel:1)\nCreateTrack(name:x,channel:2)\nTrack(p)\nCreateTrack(name:p,channel:3)");
+			assert((codes(r2) == std::vector<Code>{ Code::createTrackDuplicateError }));
 		}
-		{// 孫の階層で Port(名前) した場合も、その階層での CreatePort が対象
-			const auto r = comp("CreatePort(name:bass,channel:1)\nCreateSeq(name:Y,mml:\"Port(bass) a CreatePort(name:bass,channel:1) b\")\n"
+		{// 孫の階層で Track(名前) した場合も、その階層での CreateTrack が対象
+			const auto r = comp("CreateTrack(name:bass,channel:1)\nCreateSeq(name:Y,mml:\"Track(bass) a CreateTrack(name:bass,channel:1) b\")\n"
 				"CreateSeq(name:X,mml:\"Seq(Y)\")\nSeq(X)");
-			assert((codes(r) == std::vector<Code>{ Code::createPortShadowError }));
+			assert((codes(r) == std::vector<Code>{ Code::createTrackShadowError }));
 			// 子で参照しても、孫は別スコープなので影響しない
-			const auto r2 = comp("CreatePort(name:bass,channel:1)\nCreateSeq(name:Y,mml:\"CreatePort(name:bass,channel:1) b\")\n"
-				"CreateSeq(name:X,mml:\"Port(bass) a Seq(Y)\")\nSeq(X)");
+			const auto r2 = comp("CreateTrack(name:bass,channel:1)\nCreateSeq(name:Y,mml:\"CreateTrack(name:bass,channel:1) b\")\n"
+				"CreateSeq(name:X,mml:\"Track(bass) a Seq(Y)\")\nSeq(X)");
 			assert(!r2.hasError());
 		}
-		{// Tempo は曲全体、MasterVolume は同じ instrument の全Portで値を引き継ぐ(時間順に処理される)
-			// 指定Portの Tempo を <位置,BPM> で返す
-			const auto tempos = [](const MmlCompiler::Result& r, std::string_view portName) {
+		{// Tempo は曲全体、MasterVolume は同じ instrument の全Trackで値を引き継ぐ(時間順に処理される)
+			// 指定Trackの Tempo を <位置,BPM> で返す
+			const auto tempos = [](const MmlCompiler::Result& r, std::string_view trackName) {
 				std::vector<std::pair<size_t, long>> v;
-				for (const auto& p : r.ports) {
-					if (p.name != portName) continue;
+				for (const auto& p : r.tracks) {
+					if (p.name != trackName) continue;
 					for (const auto& ev : p.eventList) {
 						const auto m = dynamic_cast<const MmlCompiler::EventMeta*>(ev.second.get());
 						if (!m || m->data.size() != 3) continue;
@@ -2607,11 +2874,11 @@ void MmlCompiler::unitTest() {
 				}
 				return v;
 			};
-			// 指定Portの MasterVolume(SysEx)を <位置,値> で返す
-			const auto masterVolumes = [](const MmlCompiler::Result& r, std::string_view portName) {
+			// 指定Trackの MasterVolume(SysEx)を <位置,値> で返す
+			const auto masterVolumes = [](const MmlCompiler::Result& r, std::string_view trackName) {
 				std::vector<std::pair<size_t, int>> v;
-				for (const auto& p : r.ports) {
-					if (p.name != portName) continue;
+				for (const auto& p : r.tracks) {
+					if (p.name != trackName) continue;
 					for (const auto& ev : p.eventList) {
 						const auto x = dynamic_cast<const MmlCompiler::EventSystemExclusive*>(ev.second.get());
 						if (x && x->data.size() == 8) v.emplace_back(ev.first, (x->data[6] << 7) | x->data[5]);
@@ -2621,55 +2888,55 @@ void MmlCompiler::unitTest() {
 			};
 			using TempoList = std::vector<std::pair<size_t, long>>;
 			using VolList = std::vector<std::pair<size_t, int>>;
-			{// 別Portの Tempo を引き継ぐ(b は a の t90 を基準に t-=20 = 70)
-				const auto r = comp(head + "t90\nCreatePort(name:b,instrument:fm,channel:2) t-=20");
+			{// 別Trackの Tempo を引き継ぐ(b は a の t90 を基準に t-=20 = 70)
+				const auto r = comp(head + "t90\nCreateTrack(name:b,instrument:fm,channel:2) t-=20");
 				assert(!r.hasError());
 				assert((tempos(r, "a") == TempoList{ {0, 90} }));
 				assert((tempos(r, "b") == TempoList{ {0, 70} }));
 			}
-			{// Port の並び順ではなく、位置(時間)の順に引き継ぐ(後から作った b の方が早い位置)
-				const auto r = comp(head + "r1 t+=10\nCreatePort(name:b,instrument:fm,channel:2) t90");
+			{// Track の並び順ではなく、位置(時間)の順に引き継ぐ(後から作った b の方が早い位置)
+				const auto r = comp(head + "r1 t+=10\nCreateTrack(name:b,instrument:fm,channel:2) t90");
 				assert(!r.hasError());
 				assert((tempos(r, "b") == TempoList{ {0, 90} }));
 				assert((tempos(r, "a") == TempoList{ {1920, 100} }));
 			}
-			{// リタルダンド用の Seq を別Portから呼んでも、曲のその時点のテンポが基準になる
+			{// リタルダンド用の Seq を別Trackから呼んでも、曲のその時点のテンポが基準になる
 				const std::string def = head + "CreateSeq(name:rit,mml:\"t-=10 r1 t-=10\")\n"
-					"t100 r1\nCreatePort(name:conductor,instrument:fm,channel:16) r1 Seq(rit)";
+					"t100 r1\nCreateTrack(name:conductor,instrument:fm,channel:16) r1 Seq(rit)";
 				const auto r = comp(def);
 				assert(!r.hasError());
 				assert((tempos(r, "a") == TempoList{ {0, 100} }));
 				assert((tempos(r, "conductor") == TempoList{ {1920, 90}, {3840, 80} }));
 			}
-			{// 親のPortから Seq を呼んでも同じ(引き継いだPortの Tempo イベントも全体の時間順で処理される)
+			{// 親のTrackから Seq を呼んでも同じ(引き継いだTrackの Tempo イベントも全体の時間順で処理される)
 				const auto r = comp(head + "CreateSeq(name:rit,mml:\"t-=10 r1 t-=10\")\nt100 r1 Seq(rit) t-=5");
 				assert(!r.hasError());
 				assert((tempos(r, "a") == TempoList{ {0, 100}, {1920, 90}, {3840, 80}, {3840, 75} }));
 			}
-			{// 同じ位置に複数Portが相対指定を書くと、その分だけ積み上がる(Port の並び順)
-				const auto r = comp(head + "t120\nCreatePort(name:b,instrument:fm,channel:2) t-=10\nCreatePort(name:c,instrument:fm,channel:3) t-=10");
+			{// 同じ位置に複数Trackが相対指定を書くと、その分だけ積み上がる(Track の並び順)
+				const auto r = comp(head + "t120\nCreateTrack(name:b,instrument:fm,channel:2) t-=10\nCreateTrack(name:c,instrument:fm,channel:3) t-=10");
 				assert(!r.hasError());
 				assert((tempos(r, "b") == TempoList{ {0, 110} }));
 				assert((tempos(r, "c") == TempoList{ {0, 100} }));
 			}
-			{// MasterVolume は同じ instrument の Port で引き継ぎ、別 instrument は独立(既定値 16383 から)
-				const auto r = comp(head + "MasterVolume(8000)\nCreatePort(name:b,instrument:fm,channel:2) MasterVolume(+=1000)\n"
-					"CreatePort(name:c,instrument:psg,channel:1) MasterVolume(-=1000)");
+			{// MasterVolume は同じ instrument の Track で引き継ぎ、別 instrument は独立(既定値 16383 から)
+				const auto r = comp(head + "MasterVolume(8000)\nCreateTrack(name:b,instrument:fm,channel:2) MasterVolume(+=1000)\n"
+					"CreateTrack(name:c,instrument:psg,channel:1) MasterVolume(-=1000)");
 				assert(!r.hasError());
 				assert((masterVolumes(r, "a") == VolList{ {0, 8000} }));
 				assert((masterVolumes(r, "b") == VolList{ {0, 9000} }));
 				assert((masterVolumes(r, "c") == VolList{ {0, 15383} }));
 			}
-			{// MasterVolume も時間順: 後から作った Port の方が早い位置なら、そちらが先に作用する
-				const auto r = comp(head + "r1 MasterVolume(+=500)\nCreatePort(name:b,instrument:fm,channel:2) MasterVolume(1000)");
+			{// MasterVolume も時間順: 後から作った Track の方が早い位置なら、そちらが先に作用する
+				const auto r = comp(head + "r1 MasterVolume(+=500)\nCreateTrack(name:b,instrument:fm,channel:2) MasterVolume(1000)");
 				assert(!r.hasError());
 				assert((masterVolumes(r, "b") == VolList{ {0, 1000} }));
 				assert((masterVolumes(r, "a") == VolList{ {1920, 1500} }));
 			}
-			{// Channel 系(Volume)は従来どおり Port ごとに独立(Tempo だけが全体)
-				const auto r = comp(head + "V(80)\nCreatePort(name:b,instrument:fm,channel:1) V(+=10)");
+			{// Channel 系(Volume)は従来どおり Track ごとに独立(Tempo だけが全体)
+				const auto r = comp(head + "V(80)\nCreateTrack(name:b,instrument:fm,channel:1) V(+=10)");
 				assert(!r.hasError());
-				for (const auto& p : r.ports) if (p.name == "b") {
+				for (const auto& p : r.tracks) if (p.name == "b") {
 					const auto cc = dynamic_cast<const MmlCompiler::EventControlChange*>(p.eventList.begin()->second.get());
 					assert(cc && cc->value == 110);
 				}
@@ -2677,7 +2944,7 @@ void MmlCompiler::unitTest() {
 			{// 変換後に中間イベントは残らない
 				const auto r = comp(head + "CreateSeq(name:X,mml:\"t-=5 MasterVolume(+=1)\")\nt100 Seq(X) Seq(X)");
 				assert(!r.hasError());
-				for (const auto& p : r.ports) for (const auto& ev : p.eventList) assert(!dynamic_cast<const MmlCompiler::Inner::InterEvent*>(ev.second.get()));
+				for (const auto& p : r.tracks) for (const auto& ev : p.eventList) assert(!dynamic_cast<const MmlCompiler::Inner::InterEvent*>(ev.second.get()));
 			}
 		}
 		{// Seq の進む位置: 指定ナシは Seq 内の Position そのまま。CreateSeq の align で単位の倍数に切り上げ。Seq の length が最優先
@@ -2707,17 +2974,17 @@ void MmlCompiler::unitTest() {
 			assert(pos("CreateSeq(name:X,mml:\"c4 c2 c4\",align:\"2.\")", "Seq(X)") == 2880);
 			// Seq の length 指定が最優先(align は無視される)
 			assert(pos("CreateSeq(name:X,mml:\"c4 d4\",align:\"1\")", "Seq(X,length:\"4\")") == 480);
-			// Seq の中で作った Port にだけ書く Seq でも、その長さだけ進む(別Portの位置も終了位置に含まれる)
+			// Seq の中で作った Track にだけ書く Seq でも、その長さだけ進む(別Trackの位置も終了位置に含まれる)
 			{
-				const auto r = comp(head + "CreateSeq(name:X,mml:\"CreatePort(name:n,channel:5) c1\")\nSeq(X) Seq(X) e");
+				const auto r = comp(head + "CreateSeq(name:X,mml:\"CreateTrack(name:n,channel:5) c1\")\nSeq(X) Seq(X) e");
 				assert(!r.hasError());
 				assert((notes(r, "n") == Strs{ "o4c@0:1920v100", "o4c@1920:1920v100" }));
 				assert((notes(r, "a") == Strs{ "o4e@3840:480v100" }));
 			}
 			// 孫の Seq の長さも積み上がる(X=960, Y=X+e4=1440)
 			assert(pos("CreateSeq(name:X,mml:\"c4 d4\")\nCreateSeq(name:Y,mml:\"Seq(X) e4\")", "Seq(Y)") == 1440);
-			// 親から引き継いだ同名Portを CreatePort で隠蔽しても、隠蔽された親のPortの位置が終了位置に含まれる(c4 c4 の 960)
-			assert(pos("CreateSeq(name:X,mml:\"c4 c4 CreatePort(name:a,instrument:psg,channel:3) d4\")", "Seq(X)") == 960);
+			// 親から引き継いだ同名Trackを CreateTrack で隠蔽しても、隠蔽された親のTrackの位置が終了位置に含まれる(c4 c4 の 960)
+			assert(pos("CreateSeq(name:X,mml:\"c4 c4 CreateTrack(name:a,instrument:psg,channel:3) d4\")", "Seq(X)") == 960);
 			// ' (位置を進めないモード)では align があっても進まない
 			assert(pos("CreateSeq(name:X,mml:\"c4\",align:\"1\")", "' Seq(X)") == 0);
 			// align の指定誤り(音長の書式でない / 0 / 余計な文字列 / 文字列でない)はエラー
@@ -2736,7 +3003,7 @@ void MmlCompiler::unitTest() {
 
 	{// compile(): 音長指定の異常値(0分音符はゼロ除算にならず lengthError。巨大値も lengthError)
 		std::cout << "compile (length)" << std::endl;
-		const std::string head = "CreatePort(name:a,instrument:fm,channel:1)\n";
+		const std::string head = "CreateTrack(name:a,instrument:fm,channel:1)\n";
 		for (const char* mml : { "c0", "l0", "r0", "c2147483648", "c!2147483648", "c0.", "c4+0" }) {
 			const auto r = MmlCompiler::compile(head + mml);
 			assert(r.hasError());
@@ -2748,9 +3015,73 @@ void MmlCompiler::unitTest() {
 		}
 	}
 
+	{// compile(): Meter (拍子 / MIDI Time Signature FF 58 nn dd cc bb)
+		std::cout << "compile (Meter)" << std::endl;
+		using Code = MmlCompiler::ErrorCode;
+		const std::string head = "CreateTrack(name:a,instrument:fm,channel:1)\n";
+		// 指定Trackの拍子イベントを <位置,{nn,dd,cc,bb}> で返す
+		using MeterList = std::vector<std::pair<size_t, std::vector<uint8_t>>>;
+		const auto meters = [](const MmlCompiler::Result& r) {
+			MeterList v;
+			for (const auto& p : r.tracks) {
+				for (const auto& ev : p.eventList) {
+					const auto m = dynamic_cast<const MmlCompiler::EventMeta*>(ev.second.get());
+					if (m && m->type == 0x58) v.emplace_back(ev.first, m->data);
+				}
+			}
+			return v;
+		};
+		using Bytes = std::vector<uint8_t>;
+		{// 正常系(省略時の clock=24, n32=8 / 分母は 2^dd)
+			const auto r = MmlCompiler::compile(head + "Meter(4,4) c Meter(6,8) c Meter(7,16,clock:12,n32:4) c Meter(3,2,n32:16) c Meter(5,1,clock:36) c Meter(255,128,n32:0,clock:255)");
+			assert(!r.hasError());
+			assert((meters(r) == MeterList{
+				{ 0, Bytes{ 4, 2, 24, 8 } },
+				{ 480, Bytes{ 6, 3, 24, 8 } },
+				{ 960, Bytes{ 7, 4, 12, 4 } },
+				{ 1440, Bytes{ 3, 1, 24, 16 } },
+				{ 1920, Bytes{ 5, 0, 36, 8 } },
+				{ 2400, Bytes{ 255, 7, 255, 0 } },
+			}));
+		}
+		{// 6/8 を clock:36 で指定 (付点4分でクリック)
+			const auto r = MmlCompiler::compile(head + "Meter(6,8,clock:36,n32:8)");
+			assert(!r.hasError());
+			assert((meters(r) == MeterList{ { 0, Bytes{ 6, 3, 36, 8 } } }));
+		}
+		{// 空白・コメント・改行を挟んでも良い
+			const auto r = MmlCompiler::compile(head + "Meter( 6 , 8 , clock : 36 )");
+			assert(!r.hasError());
+			assert((meters(r) == MeterList{ { 0, Bytes{ 6, 3, 36, 8 } } }));
+		}
+		{// 書式エラー(分子・分母の省略 / 名前ナシ引数が3つ以上 / 整数でない値 / 不明な引数名)
+			for (const char* mml : { "Meter()", "Meter(4)", "Meter(clock:24)", "Meter(4,clock:24)", "Meter(4,4,24)", "Meter(4.0,4)", "Meter(4,4,clock:24.5)", "Meter(4,\"x\")" }) {
+				const auto r = MmlCompiler::compile(head + mml);
+				assert(r.hasError());
+				assert(r.errors[0].code == Code::meterError || r.errors[0].code == Code::argumentError);
+			}
+			const auto r = MmlCompiler::compile(head + "Meter(4,4,foo:1)");
+			assert(r.hasError());
+			assert(r.errors[0].code == Code::argumentUnknownError);
+		}
+		{// 範囲エラー(分子 1～255 / 分母は 1～128 の2のべき乗 / clock,n32 は 0～255)
+			for (const char* mml : { "Meter(0,4)", "Meter(256,4)", "Meter(-1,4)", "Meter(4,0)", "Meter(4,3)", "Meter(4,5)", "Meter(4,6)", "Meter(4,256)", "Meter(4,-4)",
+				"Meter(4,4,clock:256)", "Meter(4,4,clock:-1)", "Meter(4,4,n32:256)", "Meter(4,4,n32:-1)" }) {
+				const auto r = MmlCompiler::compile(head + mml);
+				assert(r.hasError());
+				assert(r.errors[0].code == Code::meterRangeError);
+			}
+		}
+		{// Meta コマンドと区別される(Meta(type:0x58,…) も従来どおり使える)
+			const auto r = MmlCompiler::compile(head + "Meta(type:0x58,4,2,24,8)");
+			assert(!r.hasError());
+			assert((meters(r) == MeterList{ { 0, Bytes{ 4, 2, 24, 8 } } }));
+		}
+	}
+
 	{// 全ての ErrorCode にメッセージが定義されている
 		std::cout << "getMessage (all codes)" << std::endl;
-		for (int i = static_cast<int>(MmlCompiler::ErrorCode::lengthError); i <= static_cast<int>(MmlCompiler::ErrorCode::stdEexceptionError); i++) {
+		for (int i = static_cast<int>(MmlCompiler::ErrorCode::lengthError); i <= static_cast<int>(MmlCompiler::ErrorCode::createTrackPortError); i++) {
 			assert(MmlCompiler::Result::getMessage(static_cast<MmlCompiler::ErrorCode>(i)) != "unknown");
 		}
 	}

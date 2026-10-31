@@ -66,13 +66,14 @@ namespace rlib::sequencer {
 		};
 		using EventList = std::multimap<size_t, std::shared_ptr<const EventBase>>;	// <position,Event>
 
-		struct Port {
-			std::string_view	name;			// name
-			std::string_view	instrument;		// instrument
+		struct Track {
+			std::string			name;			// name
+			std::string			instrument;		// instrument
 			uint8_t				channel = 0;	// チャンネル
+			std::optional<uint8_t>	port;		// MIDI Port(0～255)。std::nullopt: 指定なし(Portメタを出力しない)。0: Port 0 を明示
 			EventList			eventList;		// <position,Event>
 		};
-		using Event = decltype(Port::eventList)::value_type;
+		using Event = decltype(Track::eventList)::value_type;
 
 		enum class ErrorCode {
 			lengthError = 1,				// 音長の指定に誤りがあります
@@ -96,13 +97,14 @@ namespace rlib::sequencer {
 			octaveUpDownCommandError,		// オクターブアップダウン（ < , > コマンド）に誤りがあります
 			octaveUpDownRangeCommandError,	// オクターブ値が範囲外です
 			tieCommandError,				// タイ（^ コマンド）に誤りがあります
-			createPortError,				// CreatePort コマンドに誤りがあります
-			createPortPortNameError,		// CreatePort コマンドのポート名指定に誤りがあります
-			createPortDuplicateError,		// CreatePort コマンドでポート名が重複しています
-			createPortShadowError,			// Port コマンドで参照済みの親のPortと同名の Port を CreatePort しています
-			createPortChannelError,			// CreatePort コマンドのチャンネル指定に誤りがあります
-			portError,						// Port コマンドに誤りがあります
-			portNameError,					// Port コマンドのポート名指定に誤りがあります
+			createTrackError,				// CreateTrack コマンドに誤りがあります
+			createTrackTrackNameError,		// CreateTrack コマンドのトラック名指定に誤りがあります
+			createTrackDuplicateError,		// CreateTrack コマンドでトラック名が重複しています
+			createTrackShadowError,			// Track コマンドで参照済みの親のTrackと同名の Track を CreateTrack しています
+			createTrackChannelError,		// CreateTrack コマンドのチャンネル指定に誤りがあります
+			createTrackPortError,			// CreateTrack コマンドの port 指定に誤りがあります(0～255)
+			trackError,						// Track コマンドに誤りがあります
+			trackNameError,					// Track コマンドのトラック名指定に誤りがあります
 			volumeError,					// Volume コマンドの指定に誤りがあります
 			volumeRangeError,				// Volume コマンドの値が範囲外です
 			panError,						// Pan コマンドの指定に誤りがあります
@@ -137,14 +139,22 @@ namespace rlib::sequencer {
 			definePresetPSGError,			// DefinePresetPSG コマンドに誤りがあります
 			definePresetPSGNoError,			// DefinePresetPSG コマンドのプログラムナンバー指定に誤りがあります
 			definePresetPSGRangeError,		// DefinePresetPSG コマンドの値が範囲外です
+			meterError,						// Meter コマンドに誤りがあります
+			meterRangeError,				// Meter コマンドの値が範囲外です
 			unknownError,					// 解析出来ない書式です
 			stdEexceptionError,				// std::excption エラーです
+		};
+
+		// 警告(コンパイルは成功する)
+		enum class WarningCode {
+			deprecatedPortCommand = 1,		// Port コマンドは非推奨です。Track コマンドを使用してください
+			deprecatedCreatePortCommand,	// CreatePort コマンドは非推奨です。CreateTrack コマンドを使用してください
 		};
 
 
 		struct Result {
 			std::shared_ptr<const std::string>	mml;	// コンパイルソース(std::string_view の参照元 MML)
-			std::vector<Port>	ports;
+			std::vector<Track>	tracks;
 			struct Error {
 				ErrorCode			code;
 				std::string_view	text;
@@ -152,9 +162,18 @@ namespace rlib::sequencer {
 			std::vector<Error>	errors;
 			bool hasError() const { return errors.size() > 0; };
 
+			struct Warning {
+				WarningCode			code;
+				std::string_view	text;
+			};
+			std::vector<Warning>	warnings;	// 警告(エラーがあっても、そこまでに検出した分を返す)
+
 			static std::string getMessage(ErrorCode code);
+			static std::string getMessage(WarningCode code);
 			std::string getText(const std::vector<Error>& errors) const;
 			std::string getJson(const std::vector<Error>& errors) const;
+			std::string getText(const std::vector<Warning>& warnings) const;
+			std::string getJson(const std::vector<Warning>& warnings) const;
 		};
 		static Result compile(const std::shared_ptr<const std::string>& mml);
 		static Result compile(const std::string& mml) {
@@ -178,6 +197,9 @@ namespace rlib::sequencer {
 				std::string_view	next;	// 次の位置
 			};
 			static std::optional<ParsedWord> parseWord(const std::string_view& text);
+
+			// Tracks ⇒ JSON string
+			static std::string tracksToJson(const std::vector<Track>& tracks);
 		};
 
 		static void unitTest();
